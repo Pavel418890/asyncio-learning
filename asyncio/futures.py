@@ -88,7 +88,8 @@ class Future:
             self._loop = events._get_event_loop()
         else:
             self._loop = loop
-        # if future is done or was canceled call cb stored in this list
+        # if future is complete or was canceled __schedule_callbacks and loop
+        # call them soon as possible
         self._callbacks = []
         if self._loop.get_debug():
             self._source_traceback = format_helpers.extract_stack(
@@ -102,6 +103,9 @@ class Future:
             # set_exception() was not called, or result() or exception()
             # has consumed the exception
             return
+        # only if set_exception() called __log_traceback set to True
+        # before GC consume future that not completed or canceled
+        # raise exception
         exc = self._exception
         context = {
             'message':
@@ -113,6 +117,7 @@ class Future:
             context['source_traceback'] = self._source_traceback
         self._loop.call_exception_handler(context)
 
+    # like __getitem__ but for class
     __class_getitem__ = classmethod(GenericAlias)
 
     @property
@@ -122,6 +127,7 @@ class Future:
     @_log_traceback.setter
     def _log_traceback(self, val):
         if val:
+            # set to True only in set_exception()
             raise ValueError('_log_traceback can only be set to False')
         self.__log_traceback = False
 

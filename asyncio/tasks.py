@@ -296,6 +296,8 @@ class Task(futures._PyFuture):  # Inherit Python Task implementation
             blocking = getattr(result, '_asyncio_future_blocking', None)
             if blocking is not None:
                 # Yielded Future must come from Future.__iter__().
+
+                # Return False if task and future loops are not compatible.
                 if not self._check_future(result):
                     new_exc = RuntimeError(
                         f'Task {self!r} got Future '
@@ -659,6 +661,15 @@ def ensure_future(coro_or_future, *, loop=None):
 
 
 def _ensure_future(coro_or_future, *, loop=None):
+    """
+    1. If `coro_or_future` is already a Future/Task and loop is not None:
+        * check that loop in future and loop in argument is same object
+        * yes - return Future or Task
+        * no -  raise ValueError
+    2. If `coro_or_futute` is coroutine:
+        *  if loop not provided - get the running loop
+        * create Task
+    """
     if futures.isfuture(coro_or_future):
         if loop is not None and loop is not futures._get_loop(coro_or_future):
             raise ValueError('The future belongs to a different loop than '
@@ -666,6 +677,7 @@ def _ensure_future(coro_or_future, *, loop=None):
         return coro_or_future
     called_wrap_awaitable = False
     if not coroutines.iscoroutine(coro_or_future):
+
         if inspect.isawaitable(coro_or_future):
             coro_or_future = _wrap_awaitable(coro_or_future)
             called_wrap_awaitable = True
