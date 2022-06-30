@@ -97,6 +97,8 @@ class Task(futures._PyFuture):  # Inherit Python Task implementation
         super().__init__(loop=loop)
         if self._source_traceback:
             del self._source_traceback[-1]
+
+        # isinstance(coro, (Awaitable, Generator, Coroutine))
         if not coroutines.iscoroutine(coro):
             # raise after Future.__init__(), attrs are required for __del__
             # prevent logging for pending task in __del__
@@ -118,6 +120,7 @@ class Task(futures._PyFuture):  # Inherit Python Task implementation
             self._context = context
 
         self._loop.call_soon(self.__step, context=self._context)
+        # add task to all task list
         _register_task(self)
 
     def __del__(self):
@@ -282,7 +285,7 @@ class Task(futures._PyFuture):  # Inherit Python Task implementation
             else:
                 result = coro.throw(exc)
 
-        # result/error stored in this `exc.value` like in regular generators
+        # result stored in this `exc.value` like in regular generators
         except StopIteration as exc:
             if self._must_cancel:
                 # Task is cancelled right before coro stops.

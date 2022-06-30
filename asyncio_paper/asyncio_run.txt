@@ -1,0 +1,1079 @@
+INTRODUCTION:
+
+On asyncio module initialization (when it's imported) depending on the platform a
+SelectorEventLoop/ProactorEventLoop and a DefaultEventLoopPolicy class implementation is chosen (imported).
+
+For Unix systems:
+    - SelectorEventLoop is an alias for the _UnixSelectorEventLoop class which uses the 'selectors' module for
+      asynchronous I/O polling which in turn uses 'epoll' as the underlying sys call on Unix systems by default.
+      If 'epoll' is not available on the current system it falls back to using the 'poll' sys call and even if 'poll'
+      is not supported (which is highly unlikely) it falls back to using the 'select' sys call. On MacOS the 'selectors'
+      module uses 'kqueue' as the underlying sys call for I/O polling.
+
+    - DefaultEventLoopPolicy is an alias for the _UnixDefaultEventLoopPolicy class which uses
+      _UnixSelectorEventLoop class as its event loop factory, so all operations involving the
+      _UnixDefaultEventLoopPolicy will operate on the _UnixSelectorEventLoop class or its instance.
+
+For Windows:
+    - There are 2 event loop implementations: one using IOCP and another one using the 'select' sys call.
+      By default the ProactorEventLoop event loop is used for managing asynchronous I/O which uses IOCP
+      with socket/NamedPipe handles in 'overlapped' mode under the hood. This event loop implementation
+      is operated on by the DefaultEventLoopPolicy which is an alias for the WindowsProactorEventLoopPolicy class.
+      Windows' SelectorEventLoop is an alias for the _WindowsSelectorEventLoop class which is just a direct child of the
+      BaseSelectorEventLoop class without any extensions. This implementation can only be used if you choose to
+      import and use the WindowsSelectorEventLoopPolicy directly bypassing the DefaultEventLoopPolicy alias.
+
+    - DefaultEventLoopPolicy is an alias for the WindowsProactorEventLoopPolicy class which uses the ProactorEventLoop
+      class as its event loop factory, so all operations involving the WindowsProactorEventLoopPolicy will operate
+      on the ProactorEventLoop class or its instance. If you want to use the _WindowsSelectorEventLoop you have
+      to import the WindowsSelectorEventLoopPolicy class directly (but that is not the preferred way for Windows).
+
+
+
+------------------------------------------------------------------------------------------------------------------------
+
+
+
+ASYNCIO STANDARD ENTRYPOINT (asyncio.run method):
+
+When asyncio.run(coroutine, debug=None) is called:
+
+    1)
+
+    2)
+
+    3) A new event loop instance is created and returned by calling `events.new_event_loop()`. First an instance of
+       the DefaultEventLoopPolicy is created and assigned to a global asyncio package wide variable `_event_loop_policy`
+       which is initially None. The instantiation process is protected by a threading lock to avoid race
+       conditions between concurrent threads trying to create a new event loop policy. In conclusion the event
+       loop policy's `.new_event_loop()` method is called which just instantiates and returns and instance of a
+       _UnixSelectorEventLoop/ProactorEventLoop/_WindowsSelectorEventLoop class depending on the system.
+
+    4) The returned event loop instance from the previous step is then stored in a thread local variable within the
+       DefaultEventLoopPolicy instance. This is done by calling `events.set_event_loop(loop)` which in turn calls
+       the DefaultEventLoopPolicy's `set_event_loop` method which stores the newly created event loop in its
+       thread local variable instance attribute '_local' (all things that are done through the DefaultEventLoopPolicy
+       directly are implemented in pure Python).
+
+    5) `loop.run_until_complete(main)` is called with the passed in coroutine instance.
+        TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+          !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
+
+------------------------------------------------------------------------------------------------------------------------
+
+
+
+ASYNCIO FUTURE OBJECT (futures.Future class):
+   TODO - when is a future garbage collected, i.e at which point in time the remains no more references to a future?
+
+   - Implemented almost exclusively in C as part of the '_asynciomodule.c' module.
+
+   - Represents a unit of work that should complete later in the future.
+
+   - Implements the __await__ method which `yields` itself on the first call to coro.send(), on the second call
+     to coro.send() it raises a StopIteration exception which has the future's result attached to it or raises a
+     previously occurred exception if coro.throw(exc) was called.
+     So futures can and should be used in `await` expressions.
+
+   - A future can exist in one of three states: _PENDING, _CANCELLED and _FINISHED. By default a future is created in a
+     _PENDING state until a result or exception is set on the future or the future gets cancelled, in which
+     case it transfers to a _FINISHED or _CANCELLED state respectively.
+
+   - A very important class attribute of the Future class is the `._asyncio_future_blocking` attribute which
+     serves a dual purpose:
+        - Its presence is a marker for a Task instance's `.__step` method that a class implements the Future protocol
+          (i.e. is intended to be duck-type compatible and thus can be used in 'await' statements and so on).
+          When a Task's `.__step` method does a "fresh" coro.send(None) it expects a future-compatible object
+          to be yielded. It first checks the object for exact type matches with asyncio's native Future and Task types.
+          If no exact match occurred it then checks the presence of the `._asyncio_future_blocking` attribute,
+          which should be not-None and evaluate to True in 'if' clauses (the value be not-None, to enable
+          a Future's/Task's subclass to declare that it is not future-compatible by setting this attribute to None).
+          This `._asyncio_future_blocking` attribute should usually be set to True in a future-compatible object's
+          __await__ method before yielding itself (will be set back to False after Task's `.__step` method verifies
+          the yielded object.
+        - Another purpose that is currently not as relevant as it used to be when asyncio primitives were used
+          with 'yield from' statements is to check that the future-compatible object was called via `await Future()` or
+          `yield from Future()` (correct) vs. `yield Future()` (incorrect). If `yield Future()` would be called in
+          one of the coroutines up the pipeline it wouldn't trigger the future-compatible object's __await__/__iter__
+          method which sets the `._asyncio_future_blocking` flag to True and thus the Task's `.__step` method will
+          receive this object with the flag set to None and inspecting the flag will raise a RuntimeError.
+
+
+
+   1) On instantiation attaches itself to an event loop either explicitly passed in by the user or the one
+      that is currently running (may be created on the fly). Creates an empty list of callbacks which will be scheduled
+      to run during event loop's next iteration after the future completes (a.i. transfers to either
+      a _CANCELLED state or a _FINISHED state with a result or exception), the future object will be explicitly passed
+      to the callbacks as a single argument (callbacks will be called in reverse order of their registration, basically
+      the last registered callback will be called first). Callbacks will be run in the context of an events.Handle
+      instance.
+
+   2) Multiple callbacks can be registered to be run after the future completes. Callbacks are registered via the
+      future's `.add_done_callback(self, fn, *, context=None)` method. At registration time if the future is not in
+      a _PENDING state (already completed) the callback will be immediately scheduled to run during event loop's
+      next iteration. Otherwise the callback will be appended to this future's list of callbacks to be called
+      after the future completes. Callbacks can also be unregistered via the future's `.remove_done_callback(self, fn)`
+      method which just removes the callback from the future's list of callbacks.
+
+   3) A future can be 'completed' in 3 ways, a.i. be transferred from _PENDING to either _FINISHED or _CANCELLED state:
+        - By setting a result on the future via its `set_result(self, result)` method which stores the
+          passed in result within the `._result` instance attribute to be later retrieved from the raised
+          StopIteration exception after another call to future.send().
+          It also transfers the future to a _FINISHED state and in the end schedules all its done callbacks
+          to be run during event loop's next iteration. The result of the future can then later be retrieved via
+          its `.result()` method.
+
+        - By cancelling the future via its `.cancel(self, msg=None)` method which transfers the future to a _CANCELLED
+          state and stores the passed in message within a `._cancel_message` instance attribute.
+          It also sets the `.__log_traceback` attribute to False because there's no need to log a warning at future's
+          GC time even if the cancelled exception wasn't retrieved by then, unlike with other exceptions.
+          Lastly it schedules all the future's done callbacks to be run during event loop's next iteration.
+          The cancelled exception with its message can then later be retrieved via the future's `.exception()` method
+          or raised via its `.result()` method
+
+        - By setting an exception on the future via its `.set_exception(self, exception)` method which assigns the
+          passed in exception to an `._exception` instance attribute and transfers the future to a _FINISHED state.
+          It also sets the `.__log_traceback` attribute to True so that if this future's occurred exception wasn't
+          retrieved by the time of its GC a warning will be logged with some context and this exception.
+          Lastly it schedules all the future's done callbacks to be run during event loop's next iteration.
+          The exception with can then later be retrieved via the future's `.exception()` method
+          or raised via its `.result()` method
+
+   4) Retrieving a future's result can be done in multiple ways:
+        - Via the future's `.result()` method (mostly called from within the __await__ method on return):
+            a) If the future was cancelled (i.e is in a _CANCELLED state), a CancelledError exception
+               is instantiated possibly with the message previously passed into future's `.cancel(self, msg=None)`
+               method and stored in `._cancel_message` instance attribute. After that this newly created exception
+               is raised.
+               TODO - (self._cancelled_exc and exc.__context__)
+            b) If the future was completed with an exception (a.i. is in a _FINISHED state and has the `._exception`
+               instance attribute previously set by a call to the `.set_exception(self, exception)` method) the
+               exception from the `._exception` instance attribute is reraised.
+            c) If the future was completed successfully (a.i. is in a _FINISHED state and has the `._result`
+               instance attribute previously set by a call to the `set_result(self, result)` method) the future's
+               result is returned (is stored in the `._result` instance attribute).
+
+            P.S. - also sets `.__log_traceback` flag to False because if an exception occurred on the future it has
+                   already been retrieved by this method and there's no need to log a warning at the time of this
+                   future's GC.
+
+        - Via 'awaiting' the Future instance:
+            When 'awaiting' a Future in a coroutine the Future's __await__/__iter__ method will be triggered by
+            a Task instance's `.__step` method which will issue a coro.send(None) on its top level coroutine, this
+            'send' will eventually reach the Future's __await__/__iter__ method through the pipeline of coroutines.
+            At this point the Future will check if it has already completed or not, and if it has,
+            it just return its `.result()` which will raise a StopIteration exception with the result value attached
+            to it and will be implicitly handled by the coroutine which was awaiting this Future instance under
+            the hood.
+            Otherwise if the Future instance is still in a _PENDING state if will set its `._asyncio_future_blocking`
+            flag to True and yield itself up the pipeline of coroutines up to the top level Task's `.__step` method.
+                a) If the future was cancelled (i.e is in a _CANCELLED state). When the Task instance's `.__wakeup`
+                   method will be called as a done callback of this Future it will throw the Future's CancelledError
+                   through the pipeline of coroutines until it reaches the Future's __await__ method in which
+                   case the CancelledError will be raised and propagated to the nearest coroutine awaiting this
+                   Future instance.
+
+                b) If the future was completed with an exception (i.e. is in a _FINISHED state and has the `._exception`
+                   instance attribute set). When the Task instance's `.__wakeup` method will be called as a done callback
+                   of this Future it will throw the Future's occurred `._exception` through the pipeline of coroutines
+                   until it reaches the Future's __await__ method in which case its previously set `._exception` will
+                   be raised and propagated to the nearest coroutine awaiting this Future instance.
+
+                c) If the future was completed successfully (i.e is in a _FINISHED state and has the `._result`
+                   instance attribute set on it). When the Task instance's `.__wakeup` method will be called as a
+                   done callback of this Future it will do a coro.send(None) which will travel through the pipeline
+                   of coroutines until it reaches the Future's __await__ method and at this point the Future's
+                   __await__ method will issue a return and also call its `.result()` method. A StopIteration
+                   exception will be raised with its `.value` attribute set to the `._result` value of the Future
+                   instance. This StopIteration exception will be implicitly handled by the nearest coroutine
+                   awaiting this Future instance. This coroutine's 'await' statement will retrieve the result from
+                   the StopIteration exception implicitly under the hood and assign it to some variable if any.
+
+
+        - Via the future's `.exception()` method which doesn't raise an exception if one as set on this future
+          but simply returns it:
+            a) If the future was cancelled (a.i. is in a _CANCELLED state), a CancelledError exception
+               is instantiated possibly with the message previously passed into future's `.cancel(self, msg=None)`
+               method and stored in `._cancel_message` instance attribute. After that this newly created exception
+               is returned to the caller.
+               TODO - (self._cancelled_exc and exc.__context__)
+            b) If the future was completed with or without and exception (a.i. is in a _FINISHED state and may or
+               may not have its `._exception` instance attribute set to an exception instance) will return the
+               previously set exception instance if one occurred or None if this future completed successfully.
+
+            P.S. - also sets `.__log_traceback` flag to False because if an exception occurred on the future it has
+                   already been retrieved by this method and there's no need to log a warning at the time of this
+                   future's GC.
+
+   5) Checking the future's current state can be done in 2 ways:
+        - By checking if the future is still in a pending state or not via the `.done()` instance method which
+          will return True if the future is currently either in a _FINISHED or _CANCELLED state. If the future
+          is still _PENDING will return False.
+
+        - By checking if the future is cancelled via the `.cancelled()` instance method which will return True
+          if the future is currently in a _CANCELLED state.
+
+   6) What happens when a future gets garbage collected:
+        The `.__log_traceback` class and possibly instance attribute plays an important role in this case. This
+        attribute is initially set to False as a class attribute and is only set to True when the future completes
+        with an exception via its `.set_exception(self, exception)` method. But even after this the `.__log_traceback`
+        flag can be set back to False before GC if the exception was retrieved via the future's  `.result()`
+        or `.exception()` instance methods.
+
+        At the time of the future's GC if it hasn't yet completed, has completed successfully or completed with
+        an exception and the exception was retrieved via the future's  `.result()` or `.exception()` instance methods
+        the `.__log_traceback` flag will be set to False and the GC will be performed without any extra side effects
+        in a standard manner.
+
+        On the other hand if the future completed with an exception and the exception was never retrieved either
+        by the future's `.result()` or `.exception()` instance methods the `.__log_traceback` flag will be set to
+        True at the time of the future's GC. In this case the previously occurred exception will be logged to stderr
+        by the event loop's default exception handler together with some additional context telling that the exception
+        was never retrieved by the user or library level code (a custom exception handler registered with the loop
+        may do something else with this exception and its context).
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------
+
+
+
+ASYNCIO TASK OBJECT (tasks.Task class):
+     TODO - when is a task garbage collected, a.i. at which point in time the remains no more references to a task?
+
+    - Implemented almost exclusively in C as part of the '_asynciomodule.c' module.
+
+    - Is also a Future because it's inherited from the Future class, also overrides some of the Future's methods.
+
+    - Represents an async task or a unit of work that should complete later in the future.
+
+
+    1) At instantiation time receives a coroutine as the only mandatory parameter (an event loop instance
+       and task name can also be passed through):
+       TODO - maybe describe the super call a little bit differently according to Task's specific properties.
+
+        - Like a Future (via a `super().__init__(loop=loop)` call) attaches itself to an event loop either explicitly
+          passed in by the user or the one that is currently running (may be created on the fly). Creates an empty list
+          of callbacks which will be scheduled to run during event loop's next iteration after the task completes
+          (i.e. transfers to either a _CANCELLED state or a _FINISHED state with a result or exception), the task object
+          will be explicitly passed to the callbacks as a single argument (callbacks will be called in reverse order of
+          their registration, basically the last registered callback will be called first).
+          Callbacks will be run in the context of an events.Handle instance.
+
+        - Assigns a name to this task either explicitly passed in by the user or generates a name with the help
+          of a monotonically increasing counter (for example 'Task-2').
+
+        - Stores the passed in coroutine.
+
+        TODO !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        - contextvars.copy_context()
+
+        - Arranges so that its `.__step` method will be run during event loop's next iteration - this is the main
+          mechanism to schedule coroutines to run on an event loop, basically the first Task that is created and
+          schedules its `.__step` method to run is the Task that brings the event loop to life.
+
+        - Adds itself to a global module-wide WeakSet containing all currently alive tasks (`_all_tasks` variable).
+          When the task is garbage collected it will automatically be removed from the WeakSet.
+
+    2) How does the `.__step` method actually work, what's the purpose of it and why is it scheduled to be run
+       as soon as possible at Task's instantiation time?
+
+        - Adds itself (the Task instance) to a global module-wide dictionary that maps event loops to their currently
+          running task. This is done to prevent multiple tasks from executing their
+          `.__step` methods 'at the same time'. When the `.__step` method completes the loop to this task association
+          will be removed from the global dictionary, meaning that another task is free to execute its `.__step` method.
+
+        TODO - explain this mechanism more thoroughly (for example how cancelling the waiter future causes the task
+         to wake up and inspect the `._must_cancel` flag)
+        - Checks if either this task was requested to be cancelled or not, which is done by inspecting the
+          `._must_cancel` flag which is set to True when the task's `.cancel(self, msg=None)` method is called.
+          If no exception was passed in to the `.__step` method or it's not an instance of a CancelledError,
+          then a fresh CancelledError is created the same way as a Future instance would do this - creates a
+          new instance of CancellerError possibly with a message previously set in the task's
+          `.cancel(self, msg=None)` method.
+          TODO - what's the point of setting it back to False?
+          After all of this sets the `._must_cancel` flag back to False.
+
+        - If no exception was passed in to the task's `.__step` method and this task wasn't requested to be cancelled
+          then a coro.send(None) operation is issued on the user's coroutine which will travel right through all
+          the nested 'await' statements and nested coroutines a 'top level' coroutine can have until it reaches
+          the __await__ method of the most inner Future/Task or a future-compatible object which must contain a 'yield'
+          statement that yields itself back up through this pipeline of 'awaits' and coroutines (this happens
+          only if the awaitable was just created and is in a _PENDING state, other scenarios will be explained later).
+          TODO - explain other scenarios
+
+        TODO - where and how do exceptions get passed into the task's `.__step` method?
+        - If an exception was passed in to the task's `.__step` method or the task was requested to be cancelled in
+          which case the CancelledError will take precedence over all other exception types then a coro.throw(exc)
+          operation is issued on the user's coroutine and the 'exc' exception will travel right through all
+          the nested 'await' statements and nested coroutines a 'top level' coroutine can have until it reaches
+          the __await__ method of the most inner Future/Task or a future-compatible object where the exception
+          will be finally raised and any coroutine further up the pipeline may catch this exception and do something
+          about it or let it bubble up right up the pipeline until it reaches this task's `.__step` method
+          in which case it will be raised within this method.
+          (TODO - in what scenarios does this happen and how does it get handled?)
+
+        - Scenarios in which coro.send(None) and coro.throw(exc) are called and how all this is handled by the task's
+          `.__step` method:
+
+            TODO - result._asyncio_future_blocking
+            TODO - how are future compatible objects validated?
+            1. First case (coro.send(None) for a newly created future):
+
+                There can be many of those newly created futures during a single task's lifecycle and which could reside
+                at various stages of the 'await'/coro pipeline at different points in time and also depending
+                on how many nested 'await' calls and coros the top level coroutine has.
+
+                The first time a newly created Future, Task or future-compatible object (awaitable)
+                receives a coro.send(None) on the top level coroutine (the one that was passed in and stored at
+                task's instantiation time) thee future yields itself and gets bubbled up write through the pipeline of
+                'awaits' and coros until it reaches our task's `.__step` method which stores this awaitable
+                in a local variable.
+                After that the `.__step` method examines the yielded result and expects it to be either an exact
+                type match with a Future or Task object, or to be at least a future-compatible object or None.
+                The awaitable must be attached to the same event loop as this task, yielding a generator and any other
+                result type or this task itself is also not allowed.
+
+                At this point one of the following 2 scenarios can happen:
+
+                    a) If the awaitable didn't yield itself or None and isn't attached to the same event loop as
+                       our task, meaning the result didn't match any of the above mentioned criterias,
+                       the same `.__step` method will be immediately scheduled to run during the event loop's
+                       next iteration but this time with a RuntimeError exception passed into it.
+                       At this point (if this task wasn't requested to be cancelled somewhere in between)
+                       a coro.throw(RuntimeError()) call will be issued by the task's `.__step` method and this
+                       RuntimeError will be raised in the inner most awaitable object that yielded the bad result.
+                       This RuntimeError could be caught and handled at any stage of the 'await' and
+                       coros pipeline while bubbling up in which case this task's `.__step` method could even receive
+                       a new value to work with and continue to run.
+                       But if the RuntimeError isn't handled anywhere along the way it will be reraised in this
+                       task's `.__step` method, caught and handled by setting the RuntimeError on this task
+                       instance via the `.set_exception(self, exception)` parent method, which will transfer the task
+                       to a _FINISHED state and schedule all the task's done callbacks to be called during the event
+                       loop's next iteration. It will also set the `.__log_traceback` attribute to True so that
+                       if this task's RuntimeError exception isn't retrieved by the time of its GC a warning will
+                       be logged with some context and this exception. The RuntimeError can later be
+                       retrieved via the task's `.exception()` method or raised via its `.result()` method.
+                       After that the `.__step` method will complete and remove its task from the global loop to
+                       task association mapping so another task can run its `.__step` method.
+
+                    TODO - result._asyncio_future_blocking
+                    b) If the "future/task/future-compatible" object yielded a correct result which must be itself
+                       or None and is attached to the same event loop as this task, then:
+                        - If None was yielded (bare yield within __await__) then there was basically
+                          a request to skip one loop iteration and so this tasks `.__step` method will be scheduled
+                          to run during the next iteration of the loop and then another coro.send(None) will be
+                          performed which may result in a StopIteration exception propagated up to this `.__step`
+                          method if there are no more coroutines and 'awaits' up the pipeline.
+                          The handling of StopIteration will be discussed later.
+
+                        - If the "future/task/future-compatible" object yielded itself it will be stored in
+                          a `._fut_waiter` attribute of this task
+                          TODO - how is the `._fut_waiter` used except from cancelling it?
+                          TODO - add details about the "if self._must_cancel" check right after done callback
+                           registration
+                          also a done callback will be registered on this yielded future which will be scheduled
+                          to run during event loop's next iteration after this "future/task/future-compatible" object
+                          completes, meaning that either a result or exception was set on it or it was cancelled
+                          altogether. This done callback which can coexist with other done callbacks of this future
+                          is this task's `.__wakeup` method which receives the resulting future as it's only parameter.
+                          So basically when the "future/task/future-compatible" object completes this task's `.__wakeup`
+                          method will be called which checks if the future has raised any exception or not. Depending
+                          on that it calls the task's `.__step` method again with or without an exception depending
+                          on the future's result. So another coro.send(None/exc) will be performed which might result
+                          in a StopIteration exception propagated up to this `.__step` method if there are no more
+                          coroutines and 'awaits' up the pipeline. The handling of StopIteration will
+                          be discussed later. It may also result in an exception being raised in this task's
+                          `.__step` method if it wasn't handled along the way while travelling back up the pipeline
+                          of nested coroutines and 'awaits'.
+
+            TODO - result._asyncio_future_blocking
+            TODO - add a more readable and understandable structure to this "piece of art" and add more
+                explanations about self._must_cancel flag, why is  self._fut_waiter set to None in `.__step`
+                and why do we check self._must_cancel right after receiving a valid future-compatible object.
+                Also why is self._must_cancel flag set to False after some checks.
+                Remove explanation duplications, organize them as links and restructure the text.
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            2. Second case - coro.send(None/exc) after some "future/task/future-compatible" object completes:
+
+                As mentioned previously when a task calls it's `.__step` method for a newly created
+                "future/task/future-compatible" object it does a coro.send(None) on the top level coroutine (the one
+                that was passed in and stored at task's instantiation time) which yields a future
+                back up the pipeline and `.__step` temporarily stores it in a `result` local variable.
+                There can be many of those newly created futures during a single task's lifecycle and which could reside
+                at various stages of the 'await'/coro pipeline at different points in time and also depending
+                on how many nested 'await' calls and coros the top level coroutine has.
+
+                For each such "future/task/future-compatible" on its first coro.send(None) call a done callback will be
+                added to it being this task's `.__wakeup(self, future)` method which will be called when the future
+                completes.
+
+                When this task's `.__wakeup(self, future)` method is scheduled and called as the future's
+                done callback the following of those 3 scenarios can happen:
+
+                    a) If the "future/task/future-compatible" object completed successfully meaning it transferred to a
+                       _FINISHED state with a result set on it, when the task's `.__wakeup` method will be scheduled to
+                       run as the future's done callback it will just call this future's `.result()`
+                       method and because no exception was raised this task's `.__step()` method will be
+                       immediately called without any exception passed into it.
+                       If you're interested in why we don't pass the future's result to the task's `.__step()`
+                       method directly check out the explanation provided by the asyncio developers themselves at
+                       the end of this section.
+                       When this task's `.__step()` method is called once again and no cancellation was requested
+                       in between it will do a vanilla coro.send(None) at which point the most inner
+                       "future/task/future-compatible" object will return its `.result()` from its __await__ method
+                       therefore raising a StopIteration exception which the nearest coroutine will
+                       implicitly "catch and extract the future's result value from StopIteration.value"
+                       all done in one 'await' statement.
+                       These cycle of __steps and __wakeups will keep the task running thereby executing all
+                       the nested coroutines within the top-level coroutine until the last
+                       "future/task/future-compatible" object raises a StopIteration when returning its result
+                       and so there will be no more coroutines there to implicitly acquire the the result
+                       via an 'await' call. At this point the StopIteration will bubble up right to this task's
+                       `.__step()` method and will be caught by one of its exception clauses.
+                       When the final StopIteration is caught by this task's `.__step()` method and no task
+                       cancellation was requested in between, `.__step()` will extract the future's result from
+                       StopIteration.value which is basically the final result of the top-level coroutine this task
+                       was created with. This result will be set on this task via the parent's `.set_result(exc.value)`
+                       method which will store it within a `._result` instance attribute which can then later
+                       be retrieved via the task's `.result()` method or if the task was created with an 'await'
+                       clause a StopIteration exception will be raised from the task's __await__ method
+                       on which the result will be present which a parent coroutine may implicitly handle in its
+                       'await' clause or the parent might also be a task itself.
+                       It also transfers the task to a _FINISHED state and in the end schedules all its done callbacks
+                       to be run during event loop's next iteration.
+
+                    b) If the "future/task/future-compatible" object completed with an exception meaning it
+                       transferred to a _FINISHED state with the occurred exception set on it, when the task's
+                       `.__wakeup` method will be scheduled to run as the future's done callback it will just
+                       call this future's `.result()` method and which this time will raise an exception previously
+                       set on this future. The exception will be caught by the `.__wakeup` method and passed in to
+                       another `.__step(exc)` method call.
+                       When this task's `.__step(exc)` method is called once again with an exception that occurred
+                       on the future and no cancellation was requested in between it will do a coro.throw(exc)
+                       at which point this exception will be raised in the most inner "future/task/future-compatible"
+                       object's __await__ method and will propagate to the nearest coroutine up the pipeline that was
+                       awaiting this future. This nested coroutine may decide to handle this exception and continue
+                       doing it's work in which case this exception will never reach the task's `.__step` method
+                       and very likely the previous scenario will kick in (scenario a).
+                       But if none of the coroutines up the pipeline catch and handle this exception raised in the
+                       inner most future it will propagate right up to this task's `.__step` method and will
+                       be caught and handled in the following manner:
+                            The exception will be set on this task via its parent's `.set_exception(self, exception)`
+                            method which will assign it to the `._exception` instance attribute and transfer the task
+                            to a _FINISHED state.
+                            It will also set the `.__log_traceback` attribute to True so that if this task's
+                            exception wasn't retrieved by the time of its GC a warning will be logged with some context
+                            and this exception.
+                            Lastly it schedules all the task's done callbacks to be run during event loop's
+                            next iteration.
+                            This task's exception can then later be explicitly retrieved via its
+                            `.exception()` method. It can also be raised via its `.result()` method or if the task was
+                            created within an 'await' clause this exception will be raised from this task's
+                            __await__ method which may then be caught by the nearest coroutine up the stack or
+                            bubble up to a parent task.
+
+                    TODO - save the original exception in self._cancelled_exc so we can chain it later.
+                      What is this all about?
+                    c) If the inner most "future/task/future-compatible" object of the task's top-level coroutine
+                       was cancelled independently without this task's `.cancel` method involved or it this task
+                       was cancelled itself via its `.cancel` method.
+                       Lets look at those 2 scenarios separately:
+
+                            - If the inner most "future/task/future-compatible" object of the task's top-level coroutine
+                              was cancelled independently without this task's `.cancel` method involved which means
+                              that this future will transfer to a _CANCELLED state and all of its done callbacks will be
+                              scheduled to run during the event loop's next iteration one of which will be this task's
+                              '.__wakeup' method which will just call this future's `.result()` method and
+                              which this time will create and raise a new CancelledError. This CancelledError will
+                              be caught by this task's `.__wakeup` method and passed in to another
+                              `.__step(exc)` method call.
+                              When this task's `.__step(exc)` method is called once again with the CancelledError
+                              stemming from the fact that the current `._fut_waiter` was cancelled it will issue a
+                              coro.throw(CancelledError) at which point this CancelledError will be raised in the
+                              most inner "future/task/future-compatible" object's __await__ method and will propagate
+                              to the nearest coroutine up the pipeline that was awaiting this future. This nested
+                              coroutine or any other coroutine up the coro-pipeline may decide to handle or ignore this
+                              CancelledError and continue doing it's work in which case this CancelledError will never
+                              reach the task's `.__step` method and very likely the previous scenario 'a' will kick in.
+                              But if none of the coroutines up the pipeline catch and handle the CancelledError raised
+                              in the inner most future it will propagate right up to this task's `.__step`
+                              method and will be caught and handled in the following manner:
+                                    This task will be cancelled via its parent's `.cancel` method bypassing its own
+                                    `.cancel` method override (you will see why in the 2nd scenario).
+                                    This will transfer the task to a _CANCELLED state, set the `.__log_traceback`
+                                    attribute to False because there's no need to log a warning at task's GC time even
+                                    if the cancelled exception wasn't retrieved by then, unlike with other exceptions.
+                                    Lastly it schedules all the task's done callbacks to be run during
+                                    event loop's next iteration.
+                                    The CancelledError with its message can then later be retrieved via the task's
+                                    `.exception()` method. It can also be raised via its `.result()` method or if
+                                    the task was created within an 'await' clause the CancelledError will be raised
+                                    from this task's __await__ method which may then be caught by the nearest coroutine
+                                    up the stack or bubble up to a parent task.
+
+                            - If the task is cancelled by calling its own `.cancel(self, msg=None)` method
+                              which overrides the parent's (Future) `.cancel` method. `.__log_traceback` attribute
+                              of this task is immediately set to False because there's no need to log a warning
+                              at task's GC time even if the cancelled exception wasn't retrieved by then,
+                              unlike with other exceptions.
+                              If `._fut_waiter` attribute is not None the inner most "future/task/future-compatible"
+                              object on which this task is currently operating (may be None if task's `.__step`
+                              method is already scheduled) gets cancelled via its `.cancel(msg=msg)` method.
+                              At this point we again encounter 2 different scenarios:
+                                    1. If the current inner most "future/task/future-compatible" object is a Future
+                                       it will transfer to a _CANCELLED state and all of its done callbacks will be
+                                       scheduled to run during the event loop's next iteration one of which will be
+                                       this task's '.__wakeup' method.
+                                       TODO - why do we need to set `._must_cancel` in this situation?
+                                       TODO - why do we need to set `._cancel_message` in this situation if the
+                                         most inner future's cancellation exception and message will be used instead?
+                                       We also set this task's `._must_cancel` flag to True and `._cancel_message`
+                                       attribute to the `msg` passed in.
+                                       The `.__wakeup` future's done callback will just call this future's `.result()`
+                                       method which this time will create and raise a new CancelledError.
+                                       This CancelledError will be caught by this task's `.__wakeup` method
+                                       and passed in to another `.__step(exc)` method call.
+                                       When this task's `.__step(exc)` method is called once again with the
+                                       CancelledError stemming from the fact that the current `._fut_waiter`
+                                       was cancelled it will issue a coro.throw(CancelledError) at which point
+                                       this CancelledError will be raised in the most inner
+                                       "future/task/future-compatible" object's __await__ method and will propagate
+                                       to the nearest coroutine up the pipeline that was awaiting this future.
+                                       This nested coroutine or any other coroutine up the coro-pipeline may decide
+                                       to handle or ignore this CancelledError and continue doing it's work in which
+                                       case this CancelledError will never reach the task's `.__step` method and very
+                                       likely that scenario 'a' will kick in.
+                                       But if none of the coroutines up the pipeline catch and handle the
+                                       CancelledError raised in the inner most future it will propagate right up to
+                                       this task's `.__step` method and will be caught and handled in the
+                                       following manner:
+                                            This task will be cancelled via its parent's `.cancel` method
+                                            bypassing its own `.cancel` method override. This will transfer the task
+                                            to a _CANCELLED state, set the `.__log_traceback`
+                                            attribute to False even though it was already set to False in this task's
+                                            own `.cancel` method.
+                                            Lastly it schedules all the task's done callbacks to be run during
+                                            event loop's next iteration.
+                                            The CancelledError with its message can then later be retrieved via
+                                            the task's `.exception()` method. It can also be raised via its
+                                            `.result()` method or if the task was created within an 'await' clause the
+                                            CancelledError will be raised from this task's __await__ method which
+                                            may then be caught by the nearest coroutine up the stack or bubble up
+                                            to a parent task.
+
+                                    2. If the current inner most "future/task/future-compatible" object (`._fut_waiter`)
+                                       of this task is itself a Task instance then its `.cancel(self, msg=None)`
+                                       override method will be called.
+                                       Lets assume that this inner most Task instance (this task's `._fut_waiter`)
+                                       currently has its own `._fut_waiter` attribute set to a Future instance.
+                                       This inner most future of this most inner task will be cancelled and transferred
+                                       to a _CANCELLED state and all of its done callbacks will be
+                                       scheduled to run during the event loop's next iteration one of which will be
+                                       the most inner task's '.__wakeup' method (Task which is currently the
+                                       `._fut_waiter` of our most outer task).
+                                       The `.__wakeup` future's done callback will just call this future's `.result()`
+                                       method which will create and raise a new CancelledError.
+                                       This CancelledError will be caught by the inner most task's `.__wakeup` method
+                                       and passed in to its `.__step(exc)` method call.
+                                       When this most inner task's `.__step(exc)` method is called with the
+                                       CancelledError stemming from the fact that its future was cancelled it will
+                                       issue a coro.throw(CancelledError() at which point this CancelledError
+                                       will be raised in the most inner future's __await__ method
+                                       of our most inner task and will propagate to the nearest coroutine up the
+                                       pipeline that was awaiting this future.
+                                       Staring from here we can have 2 different scenarios:
+
+                                            - No coroutine up the pipeline catches or handles the raised CancelledError
+                                              so it reaches our most inner task's `.__step` method in which
+                                              case this task will be cancelled via its parent's `.cancel`
+                                              method bypassing its own `.cancel` method override after which
+                                              our main most outer task's `.__wakeup` method will be scheduled to run
+                                              during the event loop's next iteration as a done callback of its inner
+                                              task (`._fut_waiter`). When `.__wakeup` retrieves the `.result()`
+                                              from this inner task it will get a CancelledError and because of this
+                                              call it's own `.__step(CancelledError)` method which will do a
+                                              coro.throw(CancelledError) which will reach the most inner task's
+                                              (`._fut_waiter`) __await__ method and will be raised travelling up the
+                                              pipeline of 'awaits' and coroutines and reach our primary task's
+                                              `.__step` method. At this point this task will be cancelled via its
+                                              parent's `.cancel` method bypassing its own `.cancel` method override.
+                                              This will transfer the task to a _CANCELLED state,
+                                              set the `.__log_traceback` attribute to False even though it was
+                                              already set to False in this task's own `.cancel` method.
+                                              Lastly it schedules all the task's done callbacks to be run during
+                                              event loop's next iteration.
+                                              The CancelledError with its message can then later be retrieved via
+                                              the task's `.exception()` method. It can also be raised via its
+                                              `.result()` method or if the task was created within an 'await' clause the
+                                              CancelledError will be raised from this task's __await__ method which
+                                              may then be caught by the nearest coroutine up the stack or bubble up
+                                              to a parent task.
+
+                                            - The nearest coroutine up the pipeline that was awaiting this future
+                                              or any other coroutine up the coro-pipeline stopping at our most inner
+                                              task's `.__step_method` (Task which is currently the `._fut_waiter`
+                                              of our most outer task) may decide to handle or ignore this CancelledError
+                                              and continue doing it's work in which case this cancellation
+                                              will never reach our most inner task's `.__step` method let alone
+                                              our original most outer Task instance. So the cancellation of our
+                                              most outer Task will be postponed until the most inner task completes in
+                                              some way or another and schedules our original most outer Task's
+                                              `.__wakeup` method as it's done callback, this time the most inner task's
+                                              result will make no difference meaning that there will also be no
+                                              difference between calling our original task's `.__step` method with
+                                              or without and exception. Why is that? Previously when our original
+                                              task's `cancel(self, msg=None)` method was called it set its
+                                              `._must_cancel` flag to True and this flag will be checked when this
+                                              task's `.__step` method will be called and because the flag was set to
+                                              True all other criterias will be ignored and our original task will
+                                              definitely trigger a coro.throw(CancelledError) which will reach the most
+                                              inner task's (`._fut_waiter`) __await__ method and will be raised
+                                              travelling up the pipeline of 'awaits' and coroutines and reach our
+                                              primary task's `.__step` method. At this point this task will be
+                                              cancelled via its parent's `.cancel` method bypassing its own `.cancel`
+                                              method override.
+                                              This will transfer the task to a _CANCELLED state,
+                                              set the `.__log_traceback` attribute to False even though it was
+                                              already set to False in this task's own `.cancel` method.
+                                              Lastly it schedules all the task's done callbacks to be run during
+                                              event loop's next iteration.
+                                              The CancelledError with its message can then later be retrieved via
+                                              the task's `.exception()` method. It can also be raised via its
+                                              `.result()` method or if the task was created within an 'await' clause the
+                                              CancelledError will be raised from this task's __await__ method which
+                                              may then be caught by the nearest coroutine up the stack or bubble up
+                                              to a parent task.
+
+                                              Exactly with this scenario in mind the asyncio developers left
+                                              a comment in the Task's `.cancel` method override:
+                                                 " We also do no set the `._fut_waiter` attribute back to None because
+                                                 it may be a Task that catches and ignores the cancellation
+                                                 so we may have to cancel it again later."
+
+
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------
+
+
+ASYNCIO EVENT LOOP (
+    base_events.BaseEventLoop,
+    selector_events.BaseSelectorEventLoop,
+    unix_events._UnixSelectorEventLoop
+):
+
+TODO - also where is the event loop stored, how it is retrieved and so on?
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------
+
+
+ASYNCIO HANDLE CLASSES (events.Handle, events.TimerHandle):
+
+    - All Task, Future, I/O polling and Timer callbacks together with the Task's `.__step` method are not called
+      by the event loop directly. They first get wrapped in an events.Handle/events.TimerHandle
+      instance depending on the type of callback. The event loop only executes callbacks indirectly through the
+      Handle's `._run()` method.
+
+    - Task and Future done callbacks are wrapped in Handles at the time of scheduling them to run during event loop's
+      next iteration via loop's `.call_soon()` or `.call_soon_threadsafe()` methods (the wrapping itself happens
+      in those methods).
+
+    - Task's `.__step` method gets wrapped in a Handle at the time of its instantiation when it gets scheduled to run
+      during event loop's next iteration via loop's `.call_soon()` method (the wrapping itself happens in loop's
+      `.call_soon()`)
+
+    - I/O polling callbacks are wrapped in Handles at the time of registration of their corresponding fds to be polled
+      by the event loop's selector instance. This happens when the loop's `.add_reader()` and `.add_writer()` methods
+      are called. I/O polling callbacks wrapped in Handles are added as `.data` attributes to the selector module's
+      SelectorKey namedtuple instance. When an I/O event occurs on the corresponding fd during polling,
+      which happens once every loop iteration, the Handle is retrieved from the selector key's `.data` attribute and
+      added to the event loop's list of ready handles to be run during this iteration of the loop -
+      the Handle's `._run()` method is called which in turn executes the original I/O callback.
+
+    - Timer callbacks requested to be called  by the event loop at some point in the future are also wrapped in Handles
+      (in particular events.TimerHandle instances) when loop's `.call_later()` or `.call_at()` methods are called.
+
+    - You can also call the `.call_soon()`, `.call_soon_threadsafe()`, `.call_later()`, `.call_at()` event loop
+      methods directly to schedule your own functions and methods to be called by the loop during its next iteration
+      or at some point in the future depending on the method, while also being wrapped in a Handle instance.
+      This instance will execute your function or method within its `._run()` method.
+
+
+    I) events.Handle:
+       TODO - add details about contextvars.copy_context()
+
+        1) At instantiation time gets passed a callback and args with which this callback should be executed when
+           the Handle's `._run()` method is called.
+
+        2) 2 operations can be performed on this Handle - it can either be cancelled via its `.cancel()` method
+           or execute the underlying initial callback via its `._run()` method:
+
+                - When a Handle gets cancelled it just sets its `._cancelled` flag to True and removes all references
+                  to the original callback and its args within itself. So when the event loop will try to perform
+                  execution of pending handles it will notice the `._cancelled` flag and
+                  just skip the Handle without running it.
+
+                - A handle's `._run()` method is called when the loop goes through all the current
+                  pending "call_soon", I/O, due TimerHandle callbacks and executes them.
+                  The `._run()` method will execute the handle's original callback with its args within a context.
+                  If an exception occurs during execution it will format the exception and synchronously call
+                  the event loop's exception handler, which by default logs this exception with some additional context
+                  to stderr.
+                  So basically the exception from the original callback never reaches the event loop,
+                  except for SystemExit and KeyboardInterrupt exceptions which are immediately reraised and
+                  propagated though all of the event loop's methods right up until the entrypoint to the event loop and
+                  the python program.
+
+    II) events.TimerHandle(events.Handle):
+        TODO - add details about contextvars.copy_context()
+
+        1) At instantiation time gets passed a callback and args with which this callback should be executed when
+           the TimerHandle's `._run()` method is called.
+           Also sets the `._when` attribute to a future timestamp according to event loop's time,
+           which is a `monotonic()` timestamp.
+           Sets the `._scheduled` flag to False.
+
+        2) Overloads the 'equality', 'less than', 'greater than', 'less than or equal', 'greater than or equal'
+           operators.
+           Because of this it also requires to overload the hashing method as well - a hash of a
+           TimerHandle is a hash of its `._when` `monotonic()` timestamp.
+                - All the overloaded comparison operators first check that the other object is also an instance of a
+                  TimerHandle.
+
+                - The 'equality' operator yields that to TimerHandles are equal only if their `monotonic()` `._when`
+                  timestamps are equal, callbacks and their args are identical and both have the same `._cancelled`
+                  status.
+
+                - 'Greater than' and 'less than' operators only compare the `._when` `monotonic()` timestamps of the
+                  handles.
+
+                - 'Greater than or equal' and 'less than or equal' operators first perform a check using the overloaded
+                  'greater than' and 'less than' operators and if none of them yield True perform an 'equality'
+                   check using the overloaded 'equality' operator.
+
+        3) 3 operations can be performed on a TimerHandle:
+                - Retrieve the `monotonic()` timestamp of the handle via its `.when()` method
+
+                - Cancel the handle via its `.cancel()` method which performs 2 operations sequentially:
+                     a) Increments the event loop's `._timer_cancelled_count` counter by 1 if this TimerHandle is in a
+                        scheduled state, i.e. its `._scheduled` flag is set to True and it already resides in the
+                        event loops `._scheduled` priority queue.
+                        This flag gets set to True when the TimerHandle is added to the event loop's `._scheduled`
+                        'heapq/priority queue' via the loop's `.call_later()` and `.call_at()` methods.
+
+                        The event loop uses its `._timer_cancelled_count` counter, so that at the start of each
+                        new iteration (`event_loop._run_once()`) it can check if more than 50% of the current
+                        TimerHandles residing in its priority queue, i.e. scheduled, are cancelled. If this is the case
+                        the loop's `._scheduled` priority queue gets cleaned up from all of its cancelled TimerHandles
+                        and their `._scheduled` flags are set to False.
+
+                        Also when a TimerHandle's `._when` timestamp gets elapsed it gets added to the event loop's
+                        `.ready` list of handles to run during this loop iteration and its `._scheduled` flag
+                        is set back to False.
+
+                        So basically:
+                            A TimerHandle's `._scheduled` flag is set to True when the handle is added to the
+                            event loop's `._scheduled` priority queue and set back to False when its removed from
+                            the priority queue.
+
+                     b) Sets its `._cancelled` flag to True and removes all references to the original callback
+                        and its args within itself.
+                            - When the event loop adds a due TimerHandle to its list of handles to be run during this
+                              loop iteration before executing it, it will notice the  `._cancelled` flag and just skip
+                              the TimerHandle without running it.
+                            - The `._cancelled` flag is also used to clean up all cancelled TimerHandles at the start
+                              of event loop's new iteration (`event_loop._run_once()`) if more than 50% of the current
+                              TimerHandles residing in the loop's priority queue are cancelled.
+
+                - A TimerHandle's `._run()` method is called when the loop goes through all the current
+                  pending "call_soon", I/O and TimerHandle handles and executes them sequentially
+                  (TimerHandles will be executed last, after call_soon", I/O handles get a chance to run).
+                  The `._run()` method will execute the handle's original callback with its args within a context.
+                  If an exception occurs during execution it will format the exception and call synchronously
+                  the event loop's exception handler which by default logs this exception with some additional
+                  context to stderr. So basically the exception from the original callback never reaches the event loop,
+                  except for SystemExit and KeyboardInterrupt exceptions which are immediately reraised and
+                  propagated though all of the event loop's methods right up until the entrypoint of the event loop.
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------
+
+ASYNCIO UNIX I/O polling (`.add_reader()` and `.add_writer()` methods of selector_events.BaseSelectorEventLoop):
+
+- Every iteration the event loop polls for I/O, the timeout is calculated depending on any 'ready' handles available,
+  closest TimerHandle, or is indefinite until a read-event occurs on the always tracked 'self-pipe'.
+
+- I/O polling happens with the help of the `selectors` module, which uses epoll/poll/select or kqueue under the hood,
+  depending on the current system's capabilities.
+
+- To register and fd (mostly socket fds) to be tracked by the event loop and to be polled for different I/O events every
+  loop iteration, 2 methods are provided by the selector_events.BaseSelectorEventLoop implementation, which is the base
+  class for unix_events._UnixSelectorEventLoop and windows_events._WindowsSelectorEventLoop.
+
+- These 2 methods are `.add_reader()` and `.add_writer()`
+
+
+1) `.add_reader()` method:
+
+    - A raw file descriptor or an entity providing a `.fileno()` method returning a valid fd is acceptable to be passed
+      in to this method together with a callback and some arguments for the callback (the callback will called by the
+      event loop with its arguments when a read-event occurs on the corresponding file descriptor).
+
+    - First the callback with its arguments is wrapped in a Handle instance (check out the 'ASYNCIO HANDLE CLASSES'
+      section), so when a read-event occurs the callback will not be called directly but rather within a
+      `contextvars.context` through the Handle's `._run()` method.
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------
+
+THE SELECTORS MODULE:
+
+- This module is used to hide all the complexity of dealing with I/O polling via direct sys calls such as
+  epoll/devpoll/poll/select/kqueue and also provide a mechanism to attach a callback to an fd tracked by a 'poller'
+  object. epoll/devpoll/poll/select/kqueue mechanisms are provided by the Python's `select` module which interfaces with
+  the underlying OS C/C++ APIs of those sys calls.
+
+- Provides a high level structure in the form of namedtuple called `SelectorKey` in which it stores the following
+  attributes in the following order:
+  1. <original file object>,
+  2. <original file object's fd>,
+  3. <events bitmask (for which particular events this fd is to be tracked for - read, write, or read and write),
+  4. <any data associated with the fd, usually a callback that can be called when an I/O event occurs on the fd>
+
+- Exposes a DefaultSelector class which provides all the high level APIs for managing non-blocking I/O and which is most
+  fit for the current system. Could be an:
+    - EpollSelector (preferred for Unix and is supported by Unix only),
+    - DevpollSelector (preferred for Solaris),
+    - PollSelector (used for Unix if epoll is not available),
+    - SelectSelector (Unix if epoll/poll are not available + is the only option Windows, no IOCP support for Windows here)
+    - KqueueSelector (MacOS)
+
+- Uses some module level constants (EVENT_READ = 1, EVENT_WRITE = 2) for event bitmasks, which provide a unified
+  interface to the client for specifying the I/O events they want a particular fd to be polled for.
+  This hides the implementation specific event bitmasks providing a unified API:
+        - POLLIN, POLLOUT for poll and devpoll
+        - EPOLLIN, EPOLLOUT for epoll
+        - Kevents with KQ_FILTER_READ and KQ_FILTER_WRITE params in case of kqueue
+        - Select doesn't need any event bitmasks at all
+
+- Selector class implementation details:
+
+    1) On init creates an empty mapping of fds to SelectorKeys, constructs and stores a special _SelectorMapping
+       which overrides its `__getitem__`, `__len__` and `__iter__` methods: `__len__` returns the number of fds
+       currently registered with the selector, `__iter__` lets you iterate over all of the fds currently registered,
+       `__getitem__` transforms a possible file-like object to its underlying fd and using that fd retrieves and returns
+       the corresponding SelectorKey. This _SelectorMapping can be retrieved using the selector's `.get_map()` method.
+       Different selector classes also perform some additional setup after this as well.
+
+            - SelectSelector also sets up empty `._readers` and `._writers` sets where it will store its fds to
+              poll for I/O events.
+
+            - EpollSelector/DevpollSelector/PollSelector instantiate their underlying epoll/devpoll/poll control objects
+              for later use when polling for I/O.
+
+            - KqueueSelector instantiates its kernel event kqueue (kqueue) for later use when polling for I/O.
+
+    2) To register an fd or file-like object to be tracked by the selector you must call it's `.register()` method.
+       Regardless of the selector type being used, this method creates a `SelectorKey` storing and associating it
+       with the file-objects raw fd within an instance attribute-mapping called `._fd_to_key`.
+       This `._fd_to_key` mapping is later going to be used during I/O polling (`.select()` method calls) to get
+       the associated SelectorKey with data/callback associated with each fd on which an I/O event occurred.
+
+       Let's add some more details about each selector type additions to this method.
+            - SelectSelector also adds the fd to a `._readers` or/and `._writers` sets depending on the event mask
+              passed in, constructed from the globally provided EVENT_READ and EVENT_WRITE constants.
+              Basically depending on the events for which the fd was requested to be tracked for.
+              These sets are going to be used while polling for I/O by passing them as reader and writer lists
+              to the underlying 'select' call.
+
+            - _PollLikeSelector (epoll/devpoll/poll) converts the client constructed event bitmask from globally provided
+               EVENT_READ and EVENT_WRITE constants to event bitmasks supported natively by epoll, poll and devpoll
+               and calculates their native bitmask to ensure that fds are polled for the right client-requested events.
+               After that it performs a sys call on the control epoll/devpoll/poll object to register
+               the fd to be polled for the client-requested I/O events.
+               Later on, these are going to be the fds that will be polled for I/O.
+
+            - KqueueSelector depending on the event bitmask constructed from the globally provided EVENT_READ and
+              EVENT_WRITE constants does a sys call to create read and/or write kernel event 'kevent' object/objects
+              using the client-provided fd. After that it registers the 'kevent' object/objects with the kernel
+              event 'kqueue' by calling `.control()` on it also requiring and additional sys call/sys calls.
+              Later on, these are going to be the fds that will be polled for I/O.
+
+    3) To stop polling an fd for I/O, i.e. unregister it from the selector, the `.unregister()` method is used.
+       Regardless of the selector type being used, this method just pops the SelectorKey associated with the fd
+       and returns it (basically the fd is no longer being tracked at least at the application level).
+
+            - SelectSelector also removes the fd from the `._readers` and `._writers` underlying sets.
+
+            - EpollSelector/PollSelector/DevpollSelector also just unregisters the fd from being tracked for I/O
+              events by the underlying epoll/poll/devpoll control object.
+
+            - KqueueSelector creates 1 or 2 'kevent' objects with the 'KQ_EV_DELETE' command depending on, whether the
+              fd was registered to be polled for read and/or write I/O events. After that each 'kevent' control object
+              is removed from the kernel event queue (kqueue) via it's `.control()` method call - basically the fd
+              is no longer polled for read and/or write I/O events by the selector.
+
+    4) To update the I/O events that an already registered fd is tracked for or the data/callback associated with
+       the fd's I/O events the `.modify()` method is used:
+
+            - SelectSelector/KqueueSelector validates that the fd has indeed been previously registered, otherwise
+              raises a KeyError. Updates of I/O events that the fd should be tracked for are handled separately from
+              updating the associated data/callback:
+                    a) If the events mask is requested to be updated, meaning the client wants to track the fd for
+                       some different events/event the fd is first unregistered and then registered again from scratch
+                       with the new event mask - for reference check out the section how `.register()` and
+                       `.unregister()` are handled by SelectSelector and KqueueSelector
+
+                    b) If the data/callback associated with the fd's I/O event was requested to be updated then it
+                       is just replaced within the SelectorKey namedtuple associated with the fd (in reality
+                       a new SelectorKey namedtuple is associated with the fd, because tuples are immutable).
+
+            - EpollSelector/DevpollSelector/PollSelector that the fd has indeed been previously registered, otherwise
+              raises a KeyError. Updates of I/O events that the fd should be tracked for are handled separately from
+              updating the associated data/callback:
+                    a) If the events bitmask is requested to be updated, meaning the client wants to track the fd for
+                       some different events/event, the event bitmask is first transformed to the native
+                       epoll/devpoll/poll bitmask.
+                       After that the native event bitmask is updated so that the original fd will be ready to support
+                       the newly requested events and after that is applied to the already tracked fd via calling
+                       the `.modify()` method on the underlying selector, which may do this update in place
+                       under the hood, depending on the polling mechanism that's being used. Is more efficient than
+                       registering and unregistering the same fd with a new event bitmask.
+
+                    b) If the data/callback associated with the fd's I/O event was requested to be updated then it
+                       is just replaced within the SelectorKey namedtuple associated with the fd (in reality
+                       a new SelectorKey namedtuple is associated with the fd, because tuples are immutable).
+
+    5) To perform I/O polling on the registered fd the `.select()` method is used.
+            - SelectSelector polls with or without timeout all the fds currently present in its `._readers`
+              and `._writers` lists (previously registered) for I/O using the 'select' sys call passing
+              it those lists of fds.
+              After the sys call returns the method may receive 2 separate sets of fds corresponding to
+              read/write-events, it keeps them but at the same time unions those 2 sets into a
+              new set containing all of the returned fds. By iterating over the new set it calculates an event mask
+              for each returned fd using the global EVENT_READ and EVENT_WRITE constants depending on whether an fd is
+              present in the set of read-ready and/or write-ready fd sets. It also retrieves the fd's associated
+              SelectorKey namedtuple (which contains the associated data or callback). Finally it calculates the
+              final event mask for the fd - for example, a client only requested the fd to be tracked for read events,
+              but a write and read event occurred on the fd, only the read event mask will be kept.
+              Returns a list of tuples each one containing the associated SelectorKey and requested
+              event mask corresponding to an I/O event. If the requested I/O event didn't occur on a particular fd
+              the event mask will be 0.
+
+            - PollSelector/DevpollSelector first converts the passed in timeout to milliseconds if necessary (polling
+              objects expect the timout to be provided in millisecond resolution). After that it calls the
+              'poll' sys call which polls all the previously registered fds for I/O events taking the timeout
+              into account. When the sys call completes it returns a possibly-empty list of tuples containing
+              (fd, event). After that for each returned fd converts the native poll/devpoll event masks
+              (POLLIN and POLLOUT) to the module provided masks - EVENT_READ and EVENT_WRITE constants.
+              Calculates the final event mask this time already using the non-native poll event masks for the fd -
+              for example, a client only requested the fd to be tracked for read events, but a write and read event
+              occurred on the fd, only the read event mask will be kept.
+              Returns a list of tuples each one containing the associated SelectorKey and requested
+              event mask corresponding to an I/O event. If the requested I/O event didn't occur on a particular fd
+              the event mask will be 0.
+
+            - EpollSelector first converts the passed in timeout to milliseconds if necessary (epoll polling
+              objects expect the timeout to be provided in millisecond resolution). Ensure that epoll polls for
+              all the currently registered fds - epoll expects a `maxevents` param after which it will wait no longer,
+              so it should be set to the count of all currently registered fds or a least 1 if there are no fds
+              registered yet. After that it calls the `epoll_wait` sys call which polls all the previously registered
+              fds for I/O events taking the timeout into account. When the sys call completes
+              it returns a possibly-empty list of tuples containing (fd, event).
+              After that for each returned fd converts the native epoll event masks (EPOLLIN and EPOLLOUT) to
+              the module provided masks - EVENT_READ and EVENT_WRITE constants.
+              Calculates the final event mask this time already using the non-native epoll event masks for the fd -
+              for example, a client only requested the fd to be tracked for read events, but a write and read event
+              occurred on the fd, only the read event mask will be kept.
+              Returns a list of tuples each one containing the associated SelectorKey and requested
+              event mask corresponding to an I/O event. If the requested I/O event didn't occur on a particular fd
+              the event mask will be 0.
+
+            - KqueueSelector ensures that `max_ev` is set to either 1 or the current count of all registered fds, so
+              that the polling timeout parameter won't be ignored. After that it does a polls of I/O using the
+              'control' call (maybe sys call) which in the ned returns a list of kevent objects. For very kevent in the
+              list it checks what I/O events are associated with it - read and/or write. After that for each kevent its
+              corresponding fd is retrieved and the final events mask is calculated for each of those fds using
+              EVENT_READ and EVENT_WRITE constants.
+              Calculates the final event mask this time already not taking kevent objects into account - for example,
+              a client only requested the fd to be tracked for read events, but a write and read event occurred on the
+              fd, only the read event mask will be kept.
+              Returns a list of tuples each one containing the associated SelectorKey and requested
+              event mask corresponding to an I/O event. If the requested I/O event didn't occur on a particular fd
+              the event mask will be 0.
+
+    6) To close the selector and free its underlying resources the `.close()` method is used:
+
+            - SelectSelector/PollSelector just clears the fd to SelectorKey mapping and sets its `._map` attribute
+              to None which was used to retrieve SelectorKeys by their corresponding file-like objects.
+
+            - EpollSelector closes the control fd of the epoll object and after that clears the fd to SelectorKey
+              mapping and sets its `._map` attribute to None which was used to retrieve SelectorKeys by their
+              corresponding file-like objects.
+
+            - DevpollSelector closes the control fd of the devpoll object and after that clears the fd to SelectorKey
+              mapping and sets its `._map` attribute to None which was used to retrieve SelectorKeys by their
+              corresponding file-like objects.
+
+            - KqueueSelector closes the control fd of the kqueue (kernel event queue) object and after
+              that clears the fd to SelectorKey mapping and sets its `._map` attribute to None which was used to
+              retrieve SelectorKeys by their corresponding file-like objects.
+
+    7) You can retrieve a SelectorKey namedtuple corresponding to a fileobj/fd via the `.get_key()` method.
+       It retrieves the possible file-like object's fd an then using that fd returns its corresponding SelectorKey
+       (is accomplished through the underlying _SelectorMapping instance).
+
+    8) EpollSelector, DevpollSelector and KqueueSelector also allow you to retrieve the fd of their underlying
+       control objects via the `.fileno()` method.
+
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------
+
+ PROTOCOLS AND TRANSPORTS (TCP, UDP, Subprocess):
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------
+
+SERVERS PROVIDED OUT OF THE BOX:
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------
+
+ASYNCIO UTILITIES SUCH AS GATHER, WAIT_FOR AND SO ON:
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
