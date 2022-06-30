@@ -275,6 +275,9 @@ class Task(futures._PyFuture):  # Inherit Python Task implementation
             if exc is None:
                 # We use the `send` method directly, because coroutines
                 # don't have `__iter__` and `__next__` methods.
+
+                # if call send None to primed coroutine then state switch to
+                # `suspended` mode or StopIteration raised if coroutine is done
                 result = coro.send(None)
             else:
                 result = coro.throw(exc)
@@ -303,6 +306,7 @@ class Task(futures._PyFuture):  # Inherit Python Task implementation
 
                 # Return False if task and future loops are not compatible.
                 if not self._check_future(result):
+
                     new_exc = RuntimeError(
                         f'Task {self!r} got Future '
                         f'{result!r} attached to a different loop')
