@@ -1,16 +1,13 @@
 import asyncio
 import types
 
-@types.coroutine
-def counter(n):
-    while True:
-        n += 1
-        yield n
 
-async def check():
-    await asyncio.sleep(3)
+async def hello():
+    print('helo')
+    await asyncio.sleep(1)
+    print('world')
 
-asyncio.run(check)
+task = asyncio.Task(hello(), name='hello')
 
-
-    
+loop = asyncio.get_event_loop()
+loop.run_until_complete(task)

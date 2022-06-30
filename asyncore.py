@@ -58,7 +58,7 @@ from errno import EALREADY, EINPROGRESS, EWOULDBLOCK, ECONNRESET, EINVAL, \
      errorcode
 
 _DEPRECATION_MSG = ('The {name} module is deprecated and will be removed in '
-                    'Python {remove}. The recommended replacement is asyncio')
+                    'Python {remove}. The recommended replacement is asyncio_experements')
 warnings._deprecated(__name__, _DEPRECATION_MSG, remove=(3, 12))
 
 

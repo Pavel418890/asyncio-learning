@@ -24,7 +24,7 @@ def iscoroutinefunction(func):
 
 
 # Prioritize native coroutine check to speed-up
-# asyncio.iscoroutine.
+# asyncio_experements.iscoroutine.
 _COROUTINE_TYPES = (types.CoroutineType, types.GeneratorType,
                     collections.abc.Coroutine)
 _iscoroutine_typecache = set()
@@ -52,7 +52,7 @@ def _format_coroutine(coro):
     def get_name(coro):
         # Coroutines compiled with Cython sometimes don't have
         # proper __qualname__ or __name__.  While that is a bug
-        # in Cython, asyncio shouldn't crash with an AttributeError
+        # in Cython, asyncio_experements shouldn't crash with an AttributeError
         # in its __repr__ functions.
         if hasattr(coro, '__qualname__') and coro.__qualname__:
             coro_name = coro.__qualname__

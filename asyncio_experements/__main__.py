@@ -1,5 +1,5 @@
 import ast
-import asyncio
+import asyncio_experements
 import code
 import concurrent.futures
 import inspect
@@ -70,16 +70,16 @@ class REPLThread(threading.Thread):
     def run(self):
         try:
             banner = (
-                f'asyncio REPL {sys.version} on {sys.platform}\n'
-                f'Use "await" directly instead of "asyncio.run()".\n'
+                f'asyncio_experements REPL {sys.version} on {sys.platform}\n'
+                f'Use "await" directly instead of "asyncio_experements.run()".\n'
                 f'Type "help", "copyright", "credits" or "license" '
                 f'for more information.\n'
-                f'{getattr(sys, "ps1", ">>> ")}import asyncio'
+                f'{getattr(sys, "ps1", ">>> ")}import asyncio_experements'
             )
 
             console.interact(
                 banner=banner,
-                exitmsg='exiting asyncio REPL...')
+                exitmsg='exiting asyncio_experements REPL...')
         finally:
             warnings.filterwarnings(
                 'ignore',
@@ -90,10 +90,10 @@ class REPLThread(threading.Thread):
 
 
 if __name__ == '__main__':
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    loop = asyncio_experements.new_event_loop()
+    asyncio_experements.set_event_loop(loop)
 
-    repl_locals = {'asyncio': asyncio}
+    repl_locals = {'asyncio_experements': asyncio_experements}
     for key in {'__name__', '__package__',
                 '__loader__', '__spec__',
                 '__builtins__', '__file__'}:

@@ -29,7 +29,7 @@ class TransportSocket:
 
     def __repr__(self):
         s = (
-            f"<asyncio.TransportSocket fd={self.fileno()}, "
+            f"<asyncio_experements.TransportSocket fd={self.fileno()}, "
             f"family={self.family!s}, type={self.type!s}, "
             f"proto={self.proto}"
         )
@@ -51,7 +51,7 @@ class TransportSocket:
         return f"{s}>"
 
     def __getstate__(self):
-        raise TypeError("Cannot serialize asyncio.TransportSocket object")
+        raise TypeError("Cannot serialize asyncio_experements.TransportSocket object")
 
     def fileno(self):
         return self._sock.fileno()
@@ -63,7 +63,7 @@ class TransportSocket:
         return self._sock.get_inheritable()
 
     def shutdown(self, how):
-        # asyncio doesn't currently provide a high-level transport API
+        # asyncio_experements doesn't currently provide a high-level transport API
         # to shutdown the connection.
         self._sock.shutdown(how)
 

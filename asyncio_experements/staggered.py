@@ -40,7 +40,7 @@ async def staggered_race(
 
         try:
             # do work
-        except asyncio.CancelledError:
+        except asyncio_experements.CancelledError:
             # undo partially completed work
             raise
 
@@ -84,7 +84,7 @@ async def staggered_race(
         # Wait for the previous task to finish, or for delay seconds
         if previous_failed is not None:
             with contextlib.suppress(exceptions_mod.TimeoutError):
-                # Use asyncio.wait_for() instead of asyncio.wait() here, so
+                # Use asyncio_experements.wait_for() instead of asyncio_experements.wait() here, so
                 # that if we get cancelled at this point, Event.wait() is also
                 # cancelled, otherwise there will be a "Task destroyed but it is
                 # pending" later.
@@ -121,7 +121,7 @@ async def staggered_race(
             # here and CancelledError are usually thrown at one, we will
             # encounter a curious corner case where the current task will end
             # up as done() == True, cancelled() == False, exception() ==
-            # asyncio.CancelledError. This behavior is specified in
+            # asyncio_experements.CancelledError. This behavior is specified in
             # https://bugs.python.org/issue30048
             for i, t in enumerate(running_tasks):
                 if i != this_index:

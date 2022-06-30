@@ -55,7 +55,7 @@ class Future:
     _result = None
     # if any error occurred exception will be here
     _exception = None
-    # optional variable if not defined use default loop providing by asyncio
+    # optional variable if not defined use default loop providing by asyncio_experements
     _loop = None
     # store traceback for debugging
     _source_traceback = None
@@ -387,7 +387,7 @@ def _chain_future(source, destination):
 
     The result (or exception) of source will be copied to destination.
     If destination is cancelled, source gets cancelled too.
-    Compatible with both asyncio.Future and concurrent.futures.Future.
+    Compatible with both asyncio_experements.Future and concurrent.futures.Future.
     """
     if not isfuture(source) and not isinstance(source,
                                                concurrent.futures.Future):

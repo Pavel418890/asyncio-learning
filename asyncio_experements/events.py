@@ -77,6 +77,11 @@ class Handle:
 
     def _run(self):
         try:
+            # Execute callable(*args, **kwargs) code in the context object the
+            # run method is called on. Return the result of the execution or
+            # propagate an exception if one occurred. Any changes to any context
+            # variables that callable makes will be contained in the context
+            # object
             self._context.run(self._callback, *self._args)
         except (SystemExit, KeyboardInterrupt):
             raise
@@ -437,7 +442,7 @@ class AbstractEventLoop:
         """Handle an accepted connection.
 
         This is used by servers that accept connections outside of
-        asyncio, but use asyncio to handle connections.
+        asyncio_experements, but use asyncio_experements to handle connections.
 
         This method is a coroutine.  When completed, the coroutine
         returns a (transport, protocol) pair.
@@ -773,7 +778,7 @@ def set_event_loop_policy(policy):
 
 
 def get_event_loop():
-    """Return an asyncio event loop.
+    """Return an asyncio_experements event loop.
 
     When called from a coroutine or a callback (e.g. scheduled with call_soon
     or similar API), this function will always return the running event loop.
@@ -826,7 +831,7 @@ _py__get_event_loop = _get_event_loop
 
 try:
     # get_event_loop() is one of the most frequently called
-    # functions in asyncio.  Pure Python implementation is
+    # functions in asyncio_experements.  Pure Python implementation is
     # about 4 times slower than C-accelerated.
     from _asyncio import (_get_running_loop, _set_running_loop,
                           get_running_loop, get_event_loop, _get_event_loop)

@@ -1,4 +1,4 @@
-"""The asyncio package, tracking PEP 3156."""
+"""The asyncio_experements package, tracking PEP 3156."""
 
 # flake8: noqa
 
