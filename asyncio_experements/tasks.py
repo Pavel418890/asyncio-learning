@@ -119,6 +119,7 @@ class Task(futures._PyFuture):  # Inherit Python Task implementation
         else:
             self._context = context
 
+        # wraps the task in Handle which have _run method
         self._loop.call_soon(self.__step, context=self._context)
         # add task to all task list
         _register_task(self)
@@ -286,6 +287,8 @@ class Task(futures._PyFuture):  # Inherit Python Task implementation
                 result = coro.throw(exc)
 
         # result stored in this `exc.value` like in regular generators
+        # set result on that future which schedule all callbacks (__wakeup one
+        # of them)
         except StopIteration as exc:
             if self._must_cancel:
                 # Task is cancelled right before coro stops.
@@ -687,18 +690,24 @@ def _ensure_future(coro_or_future, *, loop=None):
                             'the one specified as the loop argument')
         return coro_or_future
     called_wrap_awaitable = False
+    # check isinstance(coro_or_future, Coroutine, GeneratorType, CoroutineType)
     if not coroutines.iscoroutine(coro_or_future):
-
+        # check isinstance(coro_or_future, Coroutine or Generator) and implement
+        # __await__ method or have special flag CO_ITERABLE_COROUTINE
         if inspect.isawaitable(coro_or_future):
+            # Convert regular generator function to a coroutine by the replacing
+            # special code flag to CO_ITERABLE_COROUTINE
             coro_or_future = _wrap_awaitable(coro_or_future)
             called_wrap_awaitable = True
         else:
-            raise TypeError('An asyncio_experements.Future, a coroutine or an awaitable '
+            raise TypeError('An asyncio.Future, a coroutine or an awaitable '
                             'is required')
 
     if loop is None:
         loop = events._get_event_loop(stacklevel=4)
     try:
+        # return created task that already wrapped in Handle class and scheduled
+        # to the loop and run soon as possible by the _run method in Handle
         return loop.create_task(coro_or_future)
     except RuntimeError:
         if not called_wrap_awaitable:
@@ -708,7 +717,7 @@ def _ensure_future(coro_or_future, *, loop=None):
 
 @types.coroutine
 def _wrap_awaitable(awaitable):
-    """Helper for asyncio_experements.ensure_future().
+    """Helper for asyncio.ensure_future().
 
     Wraps awaitable (an object with __await__) into a coroutine
     that will later be wrapped in a Task by ensure_future().

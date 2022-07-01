@@ -55,7 +55,7 @@ class Future:
     _result = None
     # if any error occurred exception will be here
     _exception = None
-    # optional variable if not defined use default loop providing by asyncio_experements
+    # optional variable if not defined use default loop providing by asyncio
     _loop = None
     # store traceback for debugging
     _source_traceback = None
@@ -105,7 +105,7 @@ class Future:
             return
         # only if set_exception() called __log_traceback set to True
         # before GC consume future that not completed or canceled
-        # raise exception
+        # raise exception through loop method `call_exception_handler`
         exc = self._exception
         context = {
             'message':

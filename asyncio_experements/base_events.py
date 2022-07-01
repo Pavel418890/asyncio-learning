@@ -596,9 +596,15 @@ class BaseEventLoop(events.AbstractEventLoop):
         self._thread_id = threading.get_ident()
 
         old_agen_hooks = sys.get_asyncgen_hooks()
+        # `firstiter` - a callable which will be called when an
+        # asynchronous generator is iterated for the first time.
+        # `finalizer` - a callable which will be called when an asynchronous
+        # generator is about to be GCed.
         sys.set_asyncgen_hooks(firstiter=self._asyncgen_firstiter_hook,
                                finalizer=self._asyncgen_finalizer_hook)
         try:
+            # TODO describe this later when you have fully understanding with
+            # TODO tasks and future methods
             events._set_running_loop(self)
             while True:
                 self._run_once()
@@ -1838,7 +1844,7 @@ class BaseEventLoop(events.AbstractEventLoop):
         schedules the resulting callbacks, and finally schedules
         'call_later' callbacks.
         """
-
+        
         sched_count = len(self._scheduled)
         if (sched_count > _MIN_SCHEDULED_TIMER_HANDLES and
             self._timer_cancelled_count / sched_count >
