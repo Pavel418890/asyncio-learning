@@ -119,9 +119,7 @@ class Task(futures._PyFuture):  # Inherit Python Task implementation
         else:
             self._context = context
 
-        # wraps the task in Handle which have _run method
         self._loop.call_soon(self.__step, context=self._context)
-        # add task to all task list
         _register_task(self)
 
     def __del__(self):
@@ -232,7 +230,7 @@ class Task(futures._PyFuture):  # Inherit Python Task implementation
                 # to cancel it again later.
                 return True
         # It must be the case that self.__step is already scheduled.
-        self._must_cancel = True
+        self._must_cancel = True 
         self._cancel_message = msg
         return True
 
