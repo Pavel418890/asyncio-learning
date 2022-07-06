@@ -35,9 +35,12 @@ def _fileobj_to_fd(fileobj):
     else:
         try:
             fd = int(fileobj.fileno())
+        #raise error if received arg is not fd or object with fileno() method
         except (AttributeError, TypeError, ValueError):
             raise ValueError("Invalid file object: "
                              "{!r}".format(fileobj)) from None
+    # in default scenario fds 1 and 2 used by stdout stderr
+    # negative fd is just wrong
     if fd < 0:
         raise ValueError("Invalid file descriptor: {}".format(fd))
     return fd
@@ -204,7 +207,11 @@ class BaseSelector(metaclass=ABCMeta):
 
 
 class _BaseSelectorImpl(BaseSelector):
-    """Base selector implementation."""
+    """Base selector implementation.
+
+    pros:
+
+    """
 
     def __init__(self):
         # this maps file descriptors to keys
