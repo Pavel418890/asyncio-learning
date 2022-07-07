@@ -12,10 +12,9 @@ import math
 import select
 import sys
 
-
 # generic events, that must be mapped to implementation-specific ones
-EVENT_READ = (1 << 0)
-EVENT_WRITE = (1 << 1)
+EVENT_READ = (1 << 0) # 1
+EVENT_WRITE = (1 << 1) # 2
 
 
 def _fileobj_to_fd(fileobj):
@@ -47,15 +46,17 @@ def _fileobj_to_fd(fileobj):
 
 
 SelectorKey = namedtuple('SelectorKey', ['fileobj', 'fd', 'events', 'data'])
-
 SelectorKey.__doc__ = """SelectorKey(fileobj, fd, events, data)
 
-    Object used to associate a file object to its backing
+    Object used to associate a file object that have to its backing
     file descriptor, selected event mask, and attached data.
 """
 SelectorKey.fileobj.__doc__ = 'File object registered.'
 SelectorKey.fd.__doc__ = 'Underlying file descriptor.'
+# read (1) or write (2) or read and write(3)
 SelectorKey.events.__doc__ = 'Events that must be waited for on this file object.'
+# payload or callback
+# which will be returned to user after success polling I/O events
 SelectorKey.data.__doc__ = ('''Optional opaque data associated to this file object.
 For example, this could be used to store a per-client session ID.''')
 
@@ -67,16 +68,24 @@ class _SelectorMapping(Mapping):
         self._selector = selector
 
     def __len__(self):
+        # return len of dict storing fd=SelectorKey
         return len(self._selector._fd_to_key)
 
     def __getitem__(self, fileobj):
         try:
+            # try to find fd by the .fileno() method
+            # if this doesn't succeed. Iterate over _fd_to_key dict
+            # values(SelectorKey), check that SelectorKey.fileobj is fileobj
+            # and return it or continue if is not, while all keys are checked
+            # and ValueError will be raised.
             fd = self._selector._fileobj_lookup(fileobj)
+            # return SelectorKey object from _fd_to_key dict if exist.
             return self._selector._fd_to_key[fd]
         except KeyError:
             raise KeyError("{!r} is not registered".format(fileobj)) from None
 
     def __iter__(self):
+        # allow iterate over all fds stored in dict
         return iter(self._selector._fd_to_key)
 
 
@@ -186,10 +195,17 @@ class BaseSelector(metaclass=ABCMeta):
         Returns:
         SelectorKey for this file object
         """
+
         mapping = self.get_map()
         if mapping is None:
             raise RuntimeError('Selector is closed')
         try:
+            # try to find fd by the .fileno() method
+            # if this doesn't succeed. Iterate over _fd_to_key dict
+            # values(SelectorKey), check that SelectorKey.fileobj is fileobj
+            # and return it or continue if is not, while all keys are checked
+            # and ValueError will be raised.
+            # return SelectorKey object from _fd_to_key dict if exist.
             return mapping[fileobj]
         except KeyError:
             raise KeyError("{!r} is not registered".format(fileobj)) from None
@@ -207,11 +223,7 @@ class BaseSelector(metaclass=ABCMeta):
 
 
 class _BaseSelectorImpl(BaseSelector):
-    """Base selector implementation.
-
-    pros:
-
-    """
+    """Base selector implementation. """
 
     def __init__(self):
         # this maps file descriptors to keys
@@ -229,6 +241,7 @@ class _BaseSelectorImpl(BaseSelector):
         used by _SelectorMapping.
         """
         try:
+            # try call .fileno() method and check that fd is greater than 0
             return _fileobj_to_fd(fileobj)
         except ValueError:
             # Do an exhaustive search.

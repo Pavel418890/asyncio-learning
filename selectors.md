@@ -91,6 +91,8 @@ To monitor file descriptors greater than 1023, use poll(2) instead.
 
 3. select()  should  check  all specified file descriptors in the three file
 descriptor sets, up to the limit - the highest-numbered file descriptor in any
-of the three sets, plus 1). However, the current implementation ignores any file
+of the three sets, plus 1. However, the current implementation ignores any file
 descriptor in these sets that is greater than the maximum file descriptor number
 that the process currently has open.
+   
+<a id="poll"><h3>poll</h3></a>
