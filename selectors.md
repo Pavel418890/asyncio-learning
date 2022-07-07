@@ -9,7 +9,7 @@ platform; kqueue |epoll | devpoll --> poll --> select.
 * [kqueue](#kqueue)
 * [devpoll](#devpoll)
 
-<a id="select"><h3>select</h3></a>
+<a id="select"><h1>select</h1></a>
 ```shell script
 int select(int nfds, fd_set *readfds, fd_set *writefds,
           fd_set *exceptfds, struct timeval *timeout);
@@ -98,7 +98,7 @@ that the process currently has open.
 
 5. If using select() within a loop, the sets must be reinitialized before each call.
 
-<a id="poll"><h3>poll</h3></a>
+<a id="poll"><h1>poll</h1></a>
 The set of file descriptors to be monitored is specified in the fds argument,
 which is an array of structures of the following form:
 ```shell script
