@@ -276,12 +276,15 @@ class _BaseSelectorImpl(BaseSelector):
         if (not events) or (events & ~(EVENT_READ | EVENT_WRITE)):
             raise ValueError("Invalid events: {!r}".format(events))
 
+        # creating python object associated with that fd with attached events
+        # and context that will be return in select method
         key = SelectorKey(fileobj, self._fileobj_lookup(fileobj), events, data)
 
+        # check if fd already in dict with fd
         if key.fd in self._fd_to_key:
             raise KeyError("{!r} (FD {}) is already registered"
                            .format(fileobj, key.fd))
-
+        # add fd to dict with fd
         self._fd_to_key[key.fd] = key
         return key
 

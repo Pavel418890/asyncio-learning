@@ -92,7 +92,8 @@ to `_ready` queue in loop which call this handle as soon as possible.
 <a id="task__step__"><h4>\_\_step\_\_</h4></a>
 This method is like a heartbeat of event loop
 When loop is start running at least one Task will be created by the steps
-described earlier.
+described earlier and loop start beating.
+
 1. If task is already done raise InvalidStateError.
 2. In a scenario that optional arg  `exc` is passed  and task must cancelled
 reset `exc` as CancelledException
