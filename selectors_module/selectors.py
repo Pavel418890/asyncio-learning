@@ -200,12 +200,17 @@ class BaseSelector(metaclass=ABCMeta):
         if mapping is None:
             raise RuntimeError('Selector is closed')
         try:
+            # used __getitem__ from SelectMapping class
+            # which call `_fileobj_lookup` from a selector (initialized by
+            # SelectMapping.__init__)
+
             # try to find fd by the .fileno() method
             # if this doesn't succeed. Iterate over _fd_to_key dict
             # values(SelectorKey), check that SelectorKey.fileobj is fileobj
             # and return it or continue if is not, while all keys are checked
             # and ValueError will be raised.
             # return SelectorKey object from _fd_to_key dict if exist.
+
             return mapping[fileobj]
         except KeyError:
             raise KeyError("{!r} is not registered".format(fileobj)) from None
@@ -252,6 +257,22 @@ class _BaseSelectorImpl(BaseSelector):
             raise
 
     def register(self, fileobj, events, data=None):
+        """
+        check events isn't false and value is 1 | 2 | 3
+
+        bitwise operation
+        ~(1 | 2) = -4  2's complemented is 1100
+        -4 & <num>
+
+         1100 1100 1100 1100 1100 1100 1100 1100 1100 1100 1100 1100
+         0001 0010 0011 0100 0101 0110 0111 1000 1001 1010 1011 1100
+         ------------------------------------------------------------
+         0000 0000 0000 0100 0100 0100 0100 1000 1000 1000 1000 1100...and so on
+
+    base10  0   0    0   4    4    4    4   8    8    8    8    12
+
+    all num except 1, 2, 3 will be True type(!=0)
+        """
         if (not events) or (events & ~(EVENT_READ | EVENT_WRITE)):
             raise ValueError("Invalid events: {!r}".format(events))
 
