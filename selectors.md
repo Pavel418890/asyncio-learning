@@ -343,6 +343,53 @@ Common objects and methods:
    
    4.11. `__exit__` - clear fds storage and reset `SelectorMapping` as None.
 
+
+5. SelectSelector - class used select syscall.
+    
+    5.1. `__init__` - call parent __init__ method and initialize 2 empty sets for 
+    fds that wait for read operations and the same for write operation.
+    
+    5.2. `register` - call base register implementation and used bitwise operation
+    to distribute registered `SelectorKey` between two sets readers and writers by the 
+    type of event received and already checked in base register method  
+    
+    5.3. `unregister` - call base register implementation that will removed `SelectorKey`
+    from fds storage and return it. Delete particular `SelectorKey` from readers/writers
+    sets.
+    
+    5.4 `select` - return the list of ready for I/O fds.   
+    Before does the I/O polling check that timeout is None or positive number
+    and initialize the empty list as ready list.
+    
+    Pass to select syscall readers and writers sets, empty list for exceptfds
+    and timeout.In case is InterruptedError occur return the empty ready list.
+    Result from the syscall wrapped in two sets for read and write fds.
+    Iterate over union of these sets fds and does the 
+    following steps:
+      * define/redefine the `events` variable as 0
+      * check that fd in read set if is not check that fd in write set by the
+        bitwise AND operation
+      * set the `events` variable to a corresponding value (1 or 2) 
+        that depends on the result of previous step
+      * call `_key_from_fd` and get `SelectorKey` associated with fd or None
+        in case if there is no fd in fds storage.
+      * if key in previous step is not None append it to the ready list tuple of
+        key and actual event that will be finded by the bitwise AND operation
+        on current value events and `SelectorKey.events`.
+    
+    On windows platform only sockets are supported; on Unix, all type
+    of file descriptor can be used.
+    
+    *Note Windows:* Any two of the parameters, readfds, writefds, or exceptfds,
+     can be given as null. At least one must be non-null,
+     and any non-null descriptor set must contain at least one handle to a socket.
+     Because of that select for win32 ignore the exceptfds list in python and passing 
+     the writefds set and return.
+    
+     
+     
+     
+    
 The default selector uses the most efficient implementation on the current
 platform; kqueue |epoll | devpoll --> poll --> select by the `_can_use`
 method that use `select` C implementation actually.
