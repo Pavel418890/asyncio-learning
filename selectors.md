@@ -385,10 +385,20 @@ Common objects and methods:
      and any non-null descriptor set must contain at least one handle to a socket.
      Because of that select for win32 ignore the exceptfds list in python and passing 
      the writefds set and return.
+   
+   
+6. PollLikeSelector - base class sharing between poll/epoll/devpoll inherit base
+   BaseSelector implementation. 
+   Event flags is different between SelectorSelect implementation 
+   and between syscalls too, but it is still read and write or read|write
+   with specific implementation in class attribute level.
+   
+    6.1. `__init__` - call parent init method and define type of selector class
     
-     
-     
-     
+    6.2. `register` - call parent register method and set fd in fds storage.
+        
+
+
     
 The default selector uses the most efficient implementation on the current
 platform; kqueue |epoll | devpoll --> poll --> select by the `_can_use`
