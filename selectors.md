@@ -258,20 +258,23 @@ specific I/O events.
 
 <a id="selector_key"><h3>SelectorKey<h3></a>
 
+
 Namedtuple SelectorKey:
 * fileobj - file object(socket/pipe/fifo) itself,
 * fd - file descriptor associated with that file
 * events - read/write or both events that must be waited on that file
 * data - some payload or callback which will be returned when events happened
 
-<a id="file_to_fd"><h3>"**_*fileobj_to_fd* - </h3></a>
-    function received file object or fd. On file object try
-   call .fileno() method if is not ValueError will be raised. As a result fd
-   will be returned, fd must be greater then 0 or ValueError will be raised. OS
-   not provided negative fd numbers.
+<a id="file_to_fd"><h3>_fileobj_to_fd</h3></a>
+
+Function received file object or fd. On file object try
+call .fileno() method if is not ValueError will be raised. As a result fd
+will be returned, fd must be greater then 0 or ValueError will be raised. OS
+not provided negative fd numbers.
 
 <a id="selector_mapping"><h3>SelectorMapping</h3></a>
-   read-only key-value storage class implementing iterable protocol.
+
+Read-only key-value storage class implementing iterable protocol.
 
 1. **\_\_init__** - define any BaseSelector object as class attribute.
 
@@ -399,13 +402,31 @@ set and return.
 
 Base class sharing between poll/epoll/devpoll inherit BaseSelector implementation.
 
-1. **\_\_init__** - call parent init method and define type of selector class
+1. **\_\_init__** - call parent init method and call C implementation to create
+a new specific instance. 
+
+#### poll 
+Creates an internal dictionary,
+the key is the fd, and the value is the event mask
+
+#### devpoll
+
+#TODO add better description(this may be wrong) 
+open() a /dev/poll driver, by the sys call read resource limit and 
+writing an array of pollfd struct to the /dev/poll driver
+
+#### epoll
+Used epoll_create/epoll_create1 sys call that create epoll file descriptor 
+referring to the new epoll instance. This file descriptor is used for all 
+the subsequent calls to the epoll interface. 
+
+ 
 
 2. **register** - return registered `SelectorKey`. Call parent register
 method and set fd in fds storage. Event mask is different between
 SelectorSelect implementation and between sys calls too, but for user client
 it is still read and write or read|write. Each child class has a specific
-mask attributes. With bitwise operation AND define a final value for polling
+mask. With bitwise operation AND define a final value for polling
 event mask before register them.
 
 If some kind of error will be return by the sys call, then on python level
@@ -416,7 +437,10 @@ Actual registration happened by the C implementation:
 #### poll
 Add entry to internal dictionary: the key is the fd, and the value is the event
 mask
+
 #### devpoll
+
+Append entry to internal pollfd array 
 
 #### epoll
 
