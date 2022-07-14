@@ -256,7 +256,7 @@ Cons:
 Selectors - abstract class supports registering file object to be monitored for
 specific I/O events.
 
-<a id="selector_key"><h3>SelectorKey<h3></a>
+<a id="selector_key"><h3>SelectorKey</h3></a>
 
 
 Namedtuple SelectorKey:
