@@ -444,7 +444,7 @@ class _PollLikeSelector(_BaseSelectorImpl):
         return key
 
     def select(self, timeout=None):
-        # This is shared between poll() and epoll().
+        # This is shared between poll() and devpoll().
         # epoll() has a different signature and handling of timeout parameter.
         if timeout is None:
             timeout = None
