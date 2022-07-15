@@ -10,7 +10,7 @@
     - [BaseSelector](#base_selector)
     - [SelectSelector](#select_selector)
     - [PollLikeSelector](#base_poll)
-    
+
 <a id="select"><h1>select</h1></a>
 
 ```shell script
@@ -124,7 +124,8 @@ If this field is negative, then the corresponding events field is ignored and
 the `revents` field returns zero.  (This provides an easy way of ignoring a file
 descriptor for a single poll() call: simply negate the fd field.)
 
-**Note**, however, that this technique can't be used to ignore file descriptor 0.
+**Note**, however, that this technique can't be used to ignore file descriptor
+0.
 
 The field `events` is an input parameter, a bit mask specifying the events the
 application is interested in for the fd.  
@@ -258,8 +259,8 @@ specific I/O events.
 
 <a id="selector_key"><h3>SelectorKey</h3></a>
 
-
 Namedtuple SelectorKey:
+
 * fileobj - file object(socket/pipe/fifo) itself,
 * fd - file descriptor associated with that file
 * events - read/write or both events that must be waited on that file
@@ -267,10 +268,10 @@ Namedtuple SelectorKey:
 
 <a id="file_to_fd"><h3>_fileobj_to_fd</h3></a>
 
-Function received file object or fd. On file object try
-call .fileno() method if is not ValueError will be raised. As a result fd
-will be returned, fd must be greater then 0 or ValueError will be raised. OS
-not provided negative fd numbers.
+Function received file object or fd. On file object try call .fileno() method if
+is not ValueError will be raised. As a result fd will be returned, fd must be
+greater then 0 or ValueError will be raised. OS not provided negative fd
+numbers.
 
 <a id="selector_mapping"><h3>SelectorMapping</h3></a>
 
@@ -279,44 +280,42 @@ Read-only key-value storage class implementing iterable protocol.
 1. **\_\_init__** - define any BaseSelector object as class attribute.
 
 2. **\_\_iter__** - allow to iterate over all fds stored in that selector
-object.
+   object.
 
 3. **\_\_len__** - return length of fds dict storage.
 
 4. **\_\_getitem__** - in a simple scenario uses `_file_to_fd` function to
-return fd. Do an exhaustive search in case if object is invalid but still
-in `_fo_to_key`. Iterate over `_fd_to_key` dict values, check that received
-file object is a `Selector.fileobj`, get the `SelectorKey.fd` and store them
-, while dict will be exhaust and ValueError will be raised. In case if fd is
-found get it from `_fd_to_key` dict or KeyError will be raised.
-
+   return fd. Do an exhaustive search in case if object is invalid but still
+   in `_fo_to_key`. Iterate over `_fd_to_key` dict values, check that received
+   file object is a `Selector.fileobj`, get the `SelectorKey.fd` and store them
+   , while dict will be exhaust and ValueError will be raised. In case if fd is
+   found get it from `_fd_to_key` dict or KeyError will be raised.
 
 <a id="base_selector"><h3>BaseSelector</h3></a>
 
-base implementation selector class that managing state of a selector,
-implement context manager protocol.
+base implementation selector class that managing state of a selector, implement
+context manager protocol.
 
 1. **\_\_init__** - define `_fd_to_key` dict {"fd": SelectorKey} self storage
-`_map` - SelectorMapping described earlier.
+   `_map` - SelectorMapping described earlier.
 
-2. **_fileobj_lookup** - common method that return a fd from a file object.
-in a simple scenario uses `_file_to_fd` function to return fd. Do an
-exhaustive search in case if object is invalid but still in `_fo_to_key`.
-Iterate over `_fd_to_key` dict values, check that received file object is
-a `Selector.fileobj`, get the `SelectorKey.fd` and return it is, while dict
-will be exhaust and ValueError will be raised. This method used by
-the `SelectorMapping.__getitem__` and `register`/`unregister`/`modify`
-methods decribed bellow.
+2. **_fileobj_lookup** - common method that return a fd from a file object. in a
+   simple scenario uses `_file_to_fd` function to return fd. Do an exhaustive
+   search in case if object is invalid but still in `_fo_to_key`. Iterate
+   over `_fd_to_key` dict values, check that received file object is
+   a `Selector.fileobj`, get the `SelectorKey.fd` and return it is, while dict
+   will be exhaust and ValueError will be raised. This method used by
+   the `SelectorMapping.__getitem__` and `register`/`unregister`/`modify`
+   methods decribed bellow.
 
 3. **get_map** - public method returns self.SelectorMapping.
 
-4. **get_key** - public method returns `SelectorKey` associated with
-registered file object by the `SelectorMapping.__getitem__` mehtod described
-earlier.
+4. **get_key** - public method returns `SelectorKey` associated with registered
+   file object by the `SelectorMapping.__getitem__` mehtod described earlier.
 
 5. **_key_from_fd** private method returns `SelectorKey` from fds storage,
-without usage `SelectorMapping` for performance reason (exhaustive search
-used).
+   without usage `SelectorMapping` for performance reason (exhaustive search
+   used).
 
 6. **register** -
 
@@ -331,21 +330,21 @@ Args:
 Perform `bitwise operation*` that exclude all type of events != 1|2|3. Create
 new `SelectorKey` by the file object and data from args, checked events in
 previous step and fd get from file object .fileno() attribute or exhaustive
-search will be performed in case if invalid file object is received, but
-still in fds storage, anyway fd search in fds storage will be performed and
-KeyError raised if it already there, otherwise add it to fds storage and
-return new `SelectorKey`.
+search will be performed in case if invalid file object is received, but still
+in fds storage, anyway fd search in fds storage will be performed and KeyError
+raised if it already there, otherwise add it to fds storage and return
+new `SelectorKey`.
 
-7. **unregister** - return poped file object from fds storage first trying
-get file object.fileno() otherwise use exhaustive search. In case if not
-there KeyError will be raised.
+7. **unregister** - return poped file object from fds storage first trying get
+   file object.fileno() otherwise use exhaustive search. In case if not there
+   KeyError will be raised.
 
 8. **modify** - get the `SelectorKey` from fds storage first trying get file
-object.fileno() otherwise use exhaustive search and after that same operation
-as unregister and register will be called, but lazy. Meaning if updates only
-data(user context) then used private named tuple method `_replace` and
-reset `SelectorKey` in fds storage without usage `unregister` and `register`
-methods at all.
+   object.fileno() otherwise use exhaustive search and after that same operation
+   as unregister and register will be called, but lazy. Meaning if updates only
+   data(user context) then used private named tuple method `_replace` and
+   reset `SelectorKey` in fds storage without usage `unregister` and `register`
+   methods at all.
 
 9. **close** - clear fds storage and reset `SelectorMapping` as None.
 
@@ -353,104 +352,128 @@ methods at all.
 
 11. **\_\_exit__** - clear fds storage and reset `SelectorMapping` as None.
 
-
 <a id="select_selector"><h3>SelectSelector - class used select syscall.</h3></a>
 
-1. **\_\_init__** - call parent `__init__` method and initialize 2 empty sets for
-fds that wait for read operations and the same for write operation.
+1. **\_\_init__** - call parent `__init__` method and initialize 2 empty sets
+   for fds that wait for read operations and the same for write operation.
 
-2. **register** - call base register implementation and used bitwise
-operation to distribute registered `SelectorKey` between two sets readers and
-writers by the type of event received and already checked in base register
-method
+2. **register** - call base register implementation and used bitwise operation
+   to distribute registered `SelectorKey` between two sets readers and writers
+   by the type of event received and already checked in base register method
 
 3. **unregister** - call base register implementation that will
-removed `SelectorKey`
-from fds storage and return it. Delete particular `SelectorKey` from
-readers/writers sets.
+   removed `SelectorKey`
+   from fds storage and return it. Delete particular `SelectorKey` from
+   readers/writers sets.
 
 4. **select** - return the list of ready for I/O fds.   
-Before does the I/O polling check that timeout is None or positive number and
-initialize the empty list as ready list.
+   Before does the I/O polling check that timeout is None or positive number and
+   initialize the empty list as ready list.
 
 Pass to select syscall readers and writers sets, empty list for exceptfds and
 timeout.In case is InterruptedError occur return the empty ready list. Result
-from the syscall wrapped in two sets for read and write fds. Iterate over
-union of these sets fds and does the following steps:
+from the syscall wrapped in two sets for read and write fds. Iterate over union
+of these sets fds and does the following steps:
+
 * define/redefine the `events` variable as 0
-* check that fd in read set if is not check that fd in write set by the
-  bitwise AND operation
+* check that fd in read set if is not check that fd in write set by the bitwise
+  AND operation
 * set the `events` variable to a corresponding value (1 or 2)
   that depends on the result of previous step
-* call `_key_from_fd` and get `SelectorKey` associated with fd or None in
-  case if there is no fd in fds storage.
-* if key in previous step is not None append it to the ready list tuple of
-  key and actual event that will be finded by the bitwise AND operation on
-  current value events and `SelectorKey.events`.
+* call `_key_from_fd` and get `SelectorKey` associated with fd or None in case
+  if there is no fd in fds storage.
+* if key in previous step is not None append it to the ready list tuple of key
+  and actual event that will be finded by the bitwise AND operation on current
+  value events and `SelectorKey.events`.
 
 On windows platform only sockets are supported; on Unix, all type of file
 descriptor can be used.
 
-*Note Windows:* Any two of the parameters, readfds, writefds, or exceptfds,
-can be given as null. At least one must be non-null, and any non-null
-descriptor set must contain at least one handle to a socket. Because of that
-select for win32 ignore the exceptfds list in python and passing the writefds
-set and return.
-
+*Note Windows:* Any two of the parameters, readfds, writefds, or exceptfds, can
+be given as null. At least one must be non-null, and any non-null descriptor set
+must contain at least one handle to a socket. Because of that select for win32
+ignore the exceptfds list in python and passing the writefds set and return.
 
 <a id="base_poll"><h3>PollLikeSelector</h3></a>
 
-Base class sharing between poll/epoll/devpoll inherit BaseSelector implementation.
+Base class sharing between poll/epoll/devpoll inherit BaseSelector
+implementation.
 
 1. **\_\_init__** - call parent init method and call C implementation to create
-a new specific instance. 
+   a new specific instance.
 
-#### poll 
-Creates an internal dictionary,
-the key is the fd, and the value is the event mask
+#### poll
+
+Creates an internal dictionary, the key is the fd, and the value is the event
+mask
 
 #### devpoll
 
-#TODO add better description(this may be wrong) 
-open() a /dev/poll driver, by the sys call read resource limit and 
-writing an array of pollfd struct to the /dev/poll driver
+\# TODO add better description(this may be wrong)
+
+open() a /dev/poll driver, by the sys call read resource limit and writing an
+array of pollfd struct to the /dev/poll driver
 
 #### epoll
-Used epoll_create/epoll_create1 sys call that create epoll file descriptor 
-referring to the new epoll instance. This file descriptor is used for all 
-the subsequent calls to the epoll interface. 
 
- 
+Used epoll_create/epoll_create1 sys call that create epoll file descriptor
+referring to the new epoll instance. This file descriptor is used for all the
+subsequent calls to the epoll interface.
 
-2. **register** - return registered `SelectorKey`. Call parent register
-method and set fd in fds storage. Event mask is different between
-SelectorSelect implementation and between sys calls too, but for user client
-it is still read and write or read|write. Each child class has a specific
-mask. With bitwise operation AND define a final value for polling
-event mask before register them.
+2. **register** - return registered `SelectorKey`. Call parent register method
+   and set fd in fds storage. Event mask is different between SelectorSelect
+   implementation and between sys calls too, but for user client it is still
+   read and write or read|write. Each child class has a specific mask. With
+   bitwise operation AND define a final value for polling event mask before
+   register them.
 
 If some kind of error will be return by the sys call, then on python level
 exception is silenced, called parent `unregister`
 method for removing fd from fds storage and error re-raised.
 
 Actual registration happened by the C implementation:
+
 #### poll
+
 Add entry to internal dictionary: the key is the fd, and the value is the event
 mask
 
 #### devpoll
 
-Append entry to internal pollfd array 
+Append entry to internal pollfd array
 
 #### epoll
+Check that epoll instance is still exists and opened.
+epoll_ctl() sys call used with operation `EPOLL_CTL_ADD`,
+add an entry to the interest list of the epoll file descriptor. 
+The entry includes the file descriptor, a reference to the corresponding 
+open file description and events associated with fd. 
+
+3. **unregister** - call parent unregister method to remove fd from fds storage
+   and the same operation in C implementation.
+   
+#### poll
+
+First of all check that fd in internal dictionary and remove if it is.
+
+#### devpoll
+
+Check that /dev/poll driver is open and 
+a special POLLREMOVE event in the events field of the pollfd structure 
+removes the fd from the monitored set. 
+
+#### epoll
+Check that epoll instance is still exists and opened.
+epoll_ctl sys call used with operation `EPOLL_CTL_DEL`
+Remove (deregister) the target file descriptor 
+fd from the interest list.  
 
 
-3. **unregister** - call parent unregister method to remove fd from fds
-storage and the same operation in C implementation. Two type of error can
-happen:
+Two type of error can happen:
+
 * KeyError if `SelectorKey` isn't registered
-* OSError which can happen if the fd was closed since it was registered.
-  This error will be silenced.
+* OSError which can happen if the fd was closed since it was registered. This
+  error will be silenced.
 
 4. **modify** - Return modified `SelectorKey`.
 
@@ -460,12 +483,12 @@ include `SelectorKey` KeyError will be raised.
 
 Declare a flag that indicating that changes occurred.
 
-In case updates only data(user context)  flag will be set to True and then
-used private named tuple method `_replace` and reset `SelectorKey` in fds
-storage without usage `modify` C implementation at all.
+In case updates only data(user context)  flag will be set to True and then used
+private named tuple method `_replace` and reset `SelectorKey` in fds storage
+without usage `modify` C implementation at all.
 
 If events was changed. With bitwise operation AND define a final value for
-polling events flags before modify them. Delegate actual sys call to C
+polling events mask before modify them. Delegate actual sys call to C
 implementation(description bellow). On success operation flag will be set to
 True and used private named tuple method `_replace` and reset `SelectorKey`
 in fds storage
@@ -473,9 +496,6 @@ in fds storage
 If some kind of error will be return on this step, then on python level
 exception is silenced, called parent `unregister`
 method for removing fd from fds storage and error reraised.
-
-   
-   
 
 The default selector uses the most efficient implementation on the current
 platform; kqueue |epoll | devpoll --> poll --> select by the `_can_use`
