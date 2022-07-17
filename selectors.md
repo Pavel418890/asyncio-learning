@@ -409,10 +409,8 @@ mask
 
 #### devpoll
 
-\# TODO add better description(this may be wrong)
-
 open() a /dev/poll driver, by the sys call read resource limit and writing an
-array of pollfd struct to the /dev/poll driver
+fds array of pollfd struct to the /dev/poll driver
 
 #### epoll
 
@@ -440,7 +438,7 @@ mask
 
 #### devpoll
 
-Append entry to internal pollfd array
+Append to internal fds structure new pollfd struct
 
 #### epoll
 Check that epoll instance is still exists and opened.
@@ -473,7 +471,7 @@ Two type of error can happen:
 
 * KeyError if `SelectorKey` isn't registered
 * OSError which can happen if the fd was closed since it was registered. This
-  error will be silenced.
+  error muted.
 
 4. **modify** - Return modified `SelectorKey`.
 
@@ -487,15 +485,30 @@ In case updates only data(user context)  flag will be set to True and then used
 private named tuple method `_replace` and reset `SelectorKey` in fds storage
 without usage `modify` C implementation at all.
 
-If events was changed. With bitwise operation AND define a final value for
+If events change. With bitwise operation AND define a final value for
 polling events mask before modify them. Delegate actual sys call to C
 implementation(description bellow). On success operation flag will be set to
 True and used private named tuple method `_replace` and reset `SelectorKey`
 in fds storage
 
+C implementation:
+
+#### poll
+Check that received fd is not None and internal dict contains that fd.
+Check that received event bit mask is not None and reset key, value in 
+internal dict
+
+
+#### devpoll
+Check that /dev/poll driver is open and register and new pollfd structure 
+#### epoll
+
 If some kind of error will be return on this step, then on python level
-exception is silenced, called parent `unregister`
+exception is mute, called parent `unregister`
 method for removing fd from fds storage and error reraised.
+
+
+
 
 The default selector uses the most efficient implementation on the current
 platform; kqueue |epoll | devpoll --> poll --> select by the `_can_use`
