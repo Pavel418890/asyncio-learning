@@ -486,6 +486,7 @@ private named tuple method `_replace` and reset `SelectorKey` in fds storage
 without usage `modify` C implementation at all.
 
 If events change. With bitwise operation AND define a final value for
+
 polling events mask before modify them. Delegate actual sys call to C
 implementation(description bellow). On success operation flag will be set to
 True and used private named tuple method `_replace` and reset `SelectorKey`
@@ -500,12 +501,28 @@ internal dict
 
 
 #### devpoll
-Check that /dev/poll driver is open and register and new pollfd structure 
+Check that /dev/poll driver is open and write a new pollfd structure 
+to the /dev/poll driver
+
 #### epoll
+Check that epoll instance is still exists and opened.
+epoll_ctl sys call used with operation `EPOLL_CTL_MOD`
+and received fd and event bit mask. fd in the interest list will be updated.  
+
 
 If some kind of error will be return on this step, then on python level
 exception is mute, called parent `unregister`
 method for removing fd from fds storage and error reraised.
+
+5. **select** 
+
+#### poll/devpoll
+This python implementation is shared between poll and devpoll,
+but C implementation is different.
+
+First of all check the timeout parameter it may be None or > 0
+
+#### epoll 
 
 
 
