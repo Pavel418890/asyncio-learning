@@ -293,7 +293,7 @@ Read-only key-value storage class implementing iterable protocol.
 
 <a id="base_selector"><h3>BaseSelector</h3></a>
 
-base implementation selector class that managing state of a selector, implement
+base implementation selector class that managing state of a selector, includes
 context manager protocol.
 
 1. **\_\_init__** - define `_fd_to_key` dict {"fd": SelectorKey} self storage
@@ -409,8 +409,8 @@ mask
 
 #### devpoll
 
-open() a /dev/poll driver, by the sys call read resource limit and writing an
-fds array of pollfd struct to the /dev/poll driver
+open() a /dev/poll driver, by the sys call read resource limit (getrlimit())
+and allocate memory for pollfd struct array with this limit
 
 #### epoll
 
@@ -438,7 +438,7 @@ mask
 
 #### devpoll
 
-Append to internal fds structure new pollfd struct
+Append to internal fds array new pollfd struct
 
 #### epoll
 Check that epoll instance is still exists and opened.
@@ -452,7 +452,7 @@ open file description and events associated with fd.
    
 #### poll
 
-First of all check that fd in internal dictionary and remove if it is.
+Check that fd in internal dictionary and remove if it is.
 
 #### devpoll
 
@@ -501,8 +501,8 @@ internal dict
 
 
 #### devpoll
-Check that /dev/poll driver is open and write a new pollfd structure 
-to the /dev/poll driver
+Check that /dev/poll driver is open and re-write a new pollfd structure 
+
 
 #### epoll
 Check that epoll instance is still exists and opened.
@@ -514,16 +514,59 @@ If some kind of error will be return on this step, then on python level
 exception is mute, called parent `unregister`
 method for removing fd from fds storage and error reraised.
 
-5. **select** 
+5. **select** - Return the ready list of `SelectorKey` after polling I/O 
+is happened by the sys call.
 
 #### poll/devpoll
 This python implementation is shared between poll and devpoll,
-but C implementation is different.
+but C implementation is different. 
 
-First of all check the timeout parameter it may be None or > 0
+The select method receive a timeout parameter, which may be None(block until
+select sys call returns result), zero(for non-blocking polling), or a positive
+number of milliseconds.
 
+Note: Timeout value will be rounded at least to 1 millisecond, in case that 
+timeout with too much precision is received.
+
+Next declare an empty ready list and return it if sys call will be interrupted by the
+user. Delegate the actual sys call to the C implementation(described bellow).
+
+Iterate over returned result list by the sys call.
+Each element is a tuple of `fd` and `event`, so the AND bitwise operation 
+will be performed with `event` and 2'complemented POLLIN/POLLOUT bitwise masks.
+This operation needed to define a type of event for user, that expect only
+read/write event.
+After that uses `fd` to retrieve `SelectorKey` from fds storage. If `SelectorKey`
+is found, then it will be appended to the ready list.
+
+C implementation 
+* poll - check received from python timeout value is an integer or None.
+Integer: 
+  - Compare it with INT_MIN, INT_MAX(-2147483648 > timeout < 2147483647)
+  - Initialize a finish monotonic point of time
+    
+None:
+    - Use a negative value for timeout meaning a block poll until
+        events is happened.
+
+  - Iterate over internal dict and build pollfd struct array
+  - Set the special variable to running state for avoid concurrent
+    poll() invocation
+  - Release the GIL   
+  - Starting polling by the poll() sys call, with the given builded array,
+    it's length and timeout in milliseconds. The poll result is a number
+    of polled fds.
+  - Acquire GIL back  
+  - Set the special variable to finished state
+  - Build a new empty result list that will be stored a tuple of the fd
+    and occurred event.
+  - Iterate over updated pollfd struct array, where `revents` is filled
+    by the kernel on process the poll() sys call and add fd/event to the
+    result list, that will be returned after iteration is over.
+  
+* devpoll 
 #### epoll 
-
+epoll() has a different signature and handling of timeout parameter
 
 
 
@@ -532,7 +575,7 @@ platform; kqueue |epoll | devpoll --> poll --> select by the `_can_use`
 method that use `select` C implementation actually.
 
 ```shell script
-*bitwise operation
+*bitwise operation 2'complemented
    
         ~(1 | 2) = -4  
         -4 - 2's complemented is 1100
