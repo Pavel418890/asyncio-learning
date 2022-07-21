@@ -410,7 +410,8 @@ mask
 #### devpoll
 
 open() a /dev/poll driver, by the sys call read resource limit (getrlimit())
-and allocate memory for pollfd struct array with this limit
+and allocate virtual memory for buffer(size of limit), that will be contains
+pollfd struct 
 
 #### epoll
 
@@ -437,8 +438,7 @@ Add entry to internal dictionary: the key is the fd, and the value is the event
 mask
 
 #### devpoll
-
-Append to internal fds array new pollfd struct
+write a new pollfd struct in buffer
 
 #### epoll
 Check that epoll instance is still exists and opened.
@@ -502,12 +502,12 @@ internal dict
 
 #### devpoll
 Check that /dev/poll driver is open and re-write a new pollfd structure 
-
+in buffer
 
 #### epoll
 Check that epoll instance is still exists and opened.
 epoll_ctl sys call used with operation `EPOLL_CTL_MOD`
-and received fd and event bit mask. fd in the interest list will be updated.  
+and received fd and event bit mask. fds in the interest list will be updated.  
 
 
 If some kind of error will be return on this step, then on python level
@@ -525,7 +525,7 @@ The select method receive a timeout parameter, which may be None(block until
 select sys call returns result), zero(for non-blocking polling), or a positive
 number of milliseconds.
 
-Note: Timeout value will be rounded at least to 1 millisecond, in case that 
+Note: Timeout value will be rounded at least to 1 millisecond(1000.0), in case that 
 timeout with too much precision is received.
 
 Next declare an empty ready list and return it if sys call will be interrupted by the
@@ -540,34 +540,81 @@ After that uses `fd` to retrieve `SelectorKey` from fds storage. If `SelectorKey
 is found, then it will be appended to the ready list.
 
 C implementation 
-* poll - check received from python timeout value is an integer or None.
+
+**poll**
+- check received from python timeout value is an integer or None.
+
 Integer: 
-  - Compare it with INT_MIN, INT_MAX(-2147483648 > timeout < 2147483647)
-  - Initialize a finish monotonic point of time
+- Compare it with INT_MIN, INT_MAX(-2147483648 > timeout < 2147483647)
+- Initialize a finish monotonic point of time
     
 None:
-    - Use a negative value for timeout meaning a block poll until
+    
+- Use a negative value for timeout meaning a block poll until
         events is happened.
 
-  - Iterate over internal dict and build pollfd struct array
-  - Set the special variable to running state for avoid concurrent
-    poll() invocation
-  - Release the GIL   
-  - Starting polling by the poll() sys call, with the given builded array,
-    it's length and timeout in milliseconds. The poll result is a number
-    of polled fds.
-  - Acquire GIL back  
-  - Set the special variable to finished state
-  - Build a new empty result list that will be stored a tuple of the fd
-    and occurred event.
-  - Iterate over updated pollfd struct array, where `revents` is filled
-    by the kernel on process the poll() sys call and add fd/event to the
-    result list, that will be returned after iteration is over.
+- Iterate over internal dict and build pollfd struct array
+- Set the special variable to running state for avoid concurrent
+poll() invocation
+- Release the GIL   
+- Starting polling by the poll() sys call, with the given builded array,
+it's length and timeout in milliseconds. The poll result is a number
+of polled fds.
+- Acquire GIL back  
+- Set the special variable to finished state
+- Build a new empty result list that will be stored a tuple of the fd
+and occurred event.
+- Iterate over updated pollfd struct array, where `revents` is filled
+by the kernel on process the poll() sys call and add fd/event to the
+result list, that will be returned after iteration is over.
   
-* devpoll 
+**devpoll** 
+- check received from python timeout value is an integer or None.
+
+Integer: 
+
+- Compare it with INT_MIN, INT_MAX(-2147483648 > timeout < 2147483647)
+- Initialize a finish monotonic point of time
+
+None:
+
+- Use a negative value for timeout meaning a block poll until
+  events is happened.
+  raised)
+  
+- sys call write() to /dev/poll driver(if written size returned by the
+  write() sys call is different from size of buffer, then error will be
+- release GIL 
+- starting polling with ioctl sys call by the given opened /dev/poll driver
+special bit mask flag DP_POLL and address on buffer with dp_fds structs(
+  buffer pollfd struct, max fd number, timeout in milliseconds)
+  
+- acquire GIL back
+- Build a new empty result list that will be stored a tuple of the fd
+and occurred event.
+- Iterate over updated pollfd struct array, where `revents` is filled
+by the kernel on process the poll() sys call and add fd/event to the
+result list, that will be returned after iteration is over.
+
 #### epoll 
 epoll() has a different signature and handling of timeout parameter
 
+* timeout is None set it to -1, meaning block until polling
+  events happened
+* timeout 0 or negative int, meaning using non-blocking polling 
+* timeout float or int will be rounded to at least 1 millisecond(100.0)
+in case if too much precision is received.
+* define a number of expected events, should be greater than 0 or 1 will be
+passed through
+  
+* declare an empty result list for `SelectorKey` objects
+* delegate a sys call to the C implementation
+* check received from python timeout value is an integer or float.
+
+Integer: 
+- Compare it with INT_MIN, INT_MAX(-2147483648 > timeout < 2147483647)
+- Initialize a finish monotonic point of time
+    
 
 
 The default selector uses the most efficient implementation on the current
