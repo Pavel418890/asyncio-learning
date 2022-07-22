@@ -599,21 +599,36 @@ result list, that will be returned after iteration is over.
 #### epoll 
 epoll() has a different signature and handling of timeout parameter
 
-* timeout is None set it to -1, meaning block until polling
-  events happened
-* timeout 0 or negative int, meaning using non-blocking polling 
-* timeout float or int will be rounded to at least 1 millisecond(100.0)
-in case if too much precision is received.
+* `timeout` is None set it to -1, meaning block until polling
+  events happened;
+* `timeout` 0 or negative int, meaning using non-blocking polling;
+* `timeout` float or int will be rounded to at least 1 millisecond(100.0)
+in case if too much precision is received;
 * define a number of expected events, should be greater than 0 or 1 will be
-passed through
+passed through;
   
-* declare an empty result list for `SelectorKey` objects
-* delegate a sys call to the C implementation
-* check received from python timeout value is an integer or float.
+* declare an empty result list for `SelectorKey` objects;
+* delegate a sys call to the C implementation;
+* check received from python `timeout` rounded value is greater than 0;
+* convert this value at least to 1 millisecond or round value to millisecond
+int;
+* Compare it with INT_MIN, INT_MAX(-2147483648 > timeout < 2147483647);
+* Initialize a finish monotonic point of time;
+* Number of expected events is -1( set `maxevent` value to 512) or greater than 1;
+* Allocate memory buffer for result with size of `maxevent`;
+* Release a GIL;
+* Start polling with epoll_wait() sys call that expect the epoll fd instance,
+buffer for result, number `maxevent` and `timeout` in milliseconds. It return 
+a number of fd ready for requested I/O;
+* Acquire GIL back;
+* At this point of time if some error occurred by the sys call or interrupted 
+signal will be handled free memory and return empty result list;
+* In the other case after polling allocated previously buffer for epoll_events
+structs will be filled by the kernel;
+* Iterate over polling result and append to the result list tuple of fd and 
+ready events and return that list when iteration is over;
+* On python level for each 
 
-Integer: 
-- Compare it with INT_MIN, INT_MAX(-2147483648 > timeout < 2147483647)
-- Initialize a finish monotonic point of time
     
 
 
