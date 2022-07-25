@@ -1,8 +1,8 @@
 * [select](#select)
 * [poll](#poll)
 * [epoll](#epoll)
-* [kqueue](#kqueue)
 * [devpoll](#devpoll)
+* [kqueue](#kqueue)
 * [selectors.py](#selectors)
     - [SelectorKey](#selector_key)
     - [_fileobj_to_fd](#file_to_fd)
@@ -251,6 +251,10 @@ Cons:
    (poll/select used simple bitwise operation for that).
 
 2. Provided in Linux OS only
+
+<a id="kqueue"><h1>kqueue</h1></a>
+
+#TODO
 
 <a id="selectors"><h1>selector.py</h1></a>
 
@@ -627,7 +631,13 @@ signal will be handled free memory and return empty result list;
 structs will be filled by the kernel;
 * Iterate over polling result and append to the result list tuple of fd and 
 ready events and return that list when iteration is over;
-* On python level for each 
+* On python level iterate over returned result list by the sys call.
+Each element is a tuple of `fd` and `event`, so the AND bitwise operation 
+will be performed with `event` and 2'complemented EPOLLIN/EPOLLOUT bitwise masks.
+This operation needed to define a type of event for user, that expect only
+read/write event.
+After that uses `fd` to retrieve `SelectorKey` from fds storage. If `SelectorKey`
+is found, then it will be appended to the ready list. 
 
     
 
