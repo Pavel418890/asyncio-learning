@@ -61,7 +61,7 @@ def _format_callback(func, args, kwargs, suffix=''):
 
 def extract_stack(f=None, limit=None):
     """Replacement for traceback.extract_stack() that only does the
-    necessary work for asyncio_experements debug mode.
+    necessary work for asyncio debug mode.
     """
     if f is None:
         f = sys._getframe().f_back

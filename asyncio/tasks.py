@@ -420,7 +420,7 @@ async def wait(fs, *, timeout=None, return_when=ALL_COMPLETED):
 
     Usage:
 
-        done, pending = await asyncio_experements.wait(fs)
+        done, pending = await asyncio.wait(fs)
 
     Note: This does not raise TimeoutError! Futures that aren't done
     when the timeout occurs are returned in the second set.
@@ -639,7 +639,7 @@ def as_completed(fs, *, timeout=None):
 def __sleep0():
     """Skip one event loop run cycle.
 
-    This is a private helper for 'asyncio_experements.sleep()', used
+    This is a private helper for 'asyncio.sleep()', used
     when the 'delay' is set to 0.  It uses a bare 'yield'
     expression (which Task.__step knows how to handle)
     instead of creating a Future object.
@@ -968,7 +968,7 @@ _current_tasks = {}
 
 
 def _register_task(task):
-    """Register a new task in asyncio_experements as executed by loop."""
+    """Register a new task in asyncio as executed by loop."""
     _all_tasks.add(task)
 
 

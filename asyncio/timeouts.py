@@ -113,15 +113,15 @@ def timeout(delay: Optional[float]) -> Timeout:
     """Timeout async context manager.
 
     Useful in cases when you want to apply timeout logic around block
-    of code or in cases when asyncio_experements.wait_for is not suitable. For example:
+    of code or in cases when asyncio.wait_for is not suitable. For example:
 
-    >>> async with asyncio_experements.timeout(10):  # 10 seconds timeout
+    >>> async with asyncio.timeout(10):  # 10 seconds timeout
     ...     await long_running_task()
 
 
     delay - value in seconds or None to disable timeout logic
 
-    long_running_task() is interrupted by raising asyncio_experements.CancelledError,
+    long_running_task() is interrupted by raising asyncio.CancelledError,
     the top-most affected timeout() context manager converts CancelledError
     into TimeoutError.
     """
@@ -138,13 +138,13 @@ def timeout_at(when: Optional[float]) -> Timeout:
     Please note: it is not POSIX time but a time with
     undefined starting base, e.g. the time of the system power on.
 
-    >>> async with asyncio_experements.timeout_at(loop.time() + 10):
+    >>> async with asyncio.timeout_at(loop.time() + 10):
     ...     await long_running_task()
 
 
     when - a deadline when timeout occurs or None to disable timeout logic
 
-    long_running_task() is interrupted by raising asyncio_experements.CancelledError,
+    long_running_task() is interrupted by raising asyncio.CancelledError,
     the top-most affected timeout() context manager converts CancelledError
     into TimeoutError.
     """

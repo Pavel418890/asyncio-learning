@@ -1,4 +1,4 @@
-"""asyncio_experements exceptions."""
+"""asyncio exceptions."""
 
 
 __all__ = ('BrokenBarrierError',

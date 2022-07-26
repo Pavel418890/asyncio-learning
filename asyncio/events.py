@@ -442,7 +442,7 @@ class AbstractEventLoop:
         """Handle an accepted connection.
 
         This is used by servers that accept connections outside of
-        asyncio_experements, but use asyncio_experements to handle connections.
+        asyncio, but use asyncio to handle connections.
 
         This method is a coroutine.  When completed, the coroutine
         returns a (transport, protocol) pair.
@@ -778,7 +778,7 @@ def set_event_loop_policy(policy):
 
 
 def get_event_loop():
-    """Return an asyncio_experements event loop.
+    """Return an asyncio event loop.
 
     When called from a coroutine or a callback (e.g. scheduled with call_soon
     or similar API), this function will always return the running event loop.
@@ -831,7 +831,7 @@ _py__get_event_loop = _get_event_loop
 
 try:
     # get_event_loop() is one of the most frequently called
-    # functions in asyncio_experements.  Pure Python implementation is
+    # functions in asyncio.  Pure Python implementation is
     # about 4 times slower than C-accelerated.
     from _asyncio import (_get_running_loop, _set_running_loop,
                           get_running_loop, get_event_loop, _get_event_loop)

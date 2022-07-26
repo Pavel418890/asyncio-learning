@@ -201,7 +201,7 @@ class _UnixSelectorEventLoop(selector_events.BaseSelectorEventLoop):
                 # Raising exception before process creation
                 # prevents subprocess execution if the watcher
                 # is not ready to handle it.
-                raise RuntimeError("asyncio_experements.get_child_watcher() is not activated, "
+                raise RuntimeError("asyncio.get_child_watcher() is not activated, "
                                    "subprocess support is not installed.")
             waiter = self.create_future()
             transp = _UnixSubprocessTransport(self, protocol, args, shell,
@@ -1388,7 +1388,7 @@ class ThreadedChildWatcher(AbstractChildWatcher):
         thread.start()
 
     def remove_child_handler(self, pid):
-        # asyncio_experements never calls remove_child_handler() !!!
+        # asyncio never calls remove_child_handler() !!!
         # The method is no-op but is implemented because
         # abstract base classes require it.
         return True

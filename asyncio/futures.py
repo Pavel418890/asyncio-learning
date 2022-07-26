@@ -388,7 +388,7 @@ def _chain_future(source, destination):
 
     The result (or exception) of source will be copied to destination.
     If destination is cancelled, source gets cancelled too.
-    Compatible with both asyncio_experements.Future and concurrent.futures.Future.
+    Compatible with both asyncio.Future and concurrent.futures.Future.
     """
     if not isfuture(source) and not isinstance(source,
                                                concurrent.futures.Future):

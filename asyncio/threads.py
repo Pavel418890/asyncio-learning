@@ -1,4 +1,4 @@
-"""High-level support for working with threads in asyncio_experements"""
+"""High-level support for working with threads in asyncio"""
 
 import functools
 import contextvars
