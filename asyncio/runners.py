@@ -80,7 +80,34 @@ class Runner:
         return self._loop
 
     def run(self, coro, *, context=None):
-        """Run a coroutine inside the embedded event loop."""
+        """
+        Run a coroutine inside the embedded event loop.
+
+        Note: This function always creates a new event loop and closes it at the end.
+        It should be used as a main entry point for asyncio programs, and should
+        ideally only be called once.
+
+        First check that received coro is instance of
+        types.CoroutineType, types.GeneratorType, collections.abc.Coroutine
+        and no running loop already setted
+        After that lazy instantiation used, that is simple initialize
+        the loop if doesn't before. That operation platform-specific and
+        defined in moment of importing the asyncio module.
+
+        Using that loop to create a first control task(main task) with received
+        before coro. Assumed that task is an entrypoint of app or script.
+
+
+        Reset the handler of signal SIGINT to operation, which cancel the main_task
+        and wakeup loop if it is blocked by select() with long timeout.
+        If handler's operation is already done, then KeyboardInterrupt will be
+        raised.
+
+        Run main_task until is completes. (see 'run_until_complete' docstring)
+        If something wrong happen or main task is complete at this point of
+        time all tasks will be gathered and cancelled with exception info
+        (see call_exception_handler)
+        """
         if not coroutines.iscoroutine(coro):
             raise ValueError("a coroutine was expected, got {!r}".format(coro))
 

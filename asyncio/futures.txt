@@ -1,0 +1,36 @@
+--------------------------------------------------------------------------------
+Future
+--------------------------------------------------------------------------------
+
+Future - object which represents some action that will be completed later
+ "in a future".
+
+The future has a different states that define future's status
+PENDING - in progress; CANCELLED - future was cancelled; FINISHED - future is complete.
+By default it will be PENDING until a result or exception is set on the future.
+
+Another important class attribute of Future is a `_asycnio_future_blocking` this
+ field is used for a dual purpose:
+    - Its presence is a marker to declare that a class implements
+       the Future protocol (i.e. is intended to be duck-type compatible).
+        This operation will be happened before start running a loop by the
+       `run_until_complete` method. First of all it check, that received coro
+       have this attribute if is not, then it can be awaitable object(
+       had __await__ method ), which will be wrapped in Task object
+       by the tasks.ensure_future method. Otherwise the TypeError will be raised.
+
+       The value must also be not-None, to enable a subclass to declare
+       that it is not compatible by setting this to None.
+       When coro.send(None)  by the __step method it expect
+       a Future/Task compatible object to be yielded. It trying to get the
+       `_asyncio_future_blocking` marker, which should be a True if yielding
+       future was through __await__ statement(set it right before yielding itself),
+        otherwise a RuntimeError will be raised on next loop iteration via
+        __step method.
+
+    - It is set by __iter__() below so that Task._step() can tell
+        the difference between
+        `await Future()` or`yield from Future()` (correct) vs.
+        `yield Future()` (incorrect). It wouldn't trigger the __await__
+        method on next future-compatible object and __step method will be
+        received object with None flag and RuntimeError will be raised

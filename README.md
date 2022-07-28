@@ -31,8 +31,10 @@ Run one full iteration of the event loop if there is not scheduled
    **Note:**
    At this point cancelled handles removed only from the top of queue, until
    caught handle that not cancelled.
-3. **TODO** self._selector.select(event_list) when you have better
-   **TODO** understanding selectors
+   
+3. Polling fd for events(read/writes) that may occurred and add them callback
+   to the ready queue
+   
 4. In while loop remove(pop) handles in scheduled heap queue and append
    to `_ready` queue for those whose time has come. In scenario when head of
    heap queue is not ready yet just break out of the loop.
@@ -53,12 +55,18 @@ Run one full iteration of the event loop if there is not scheduled
 
 <a id="future"><h3>Future</h3></a>
 
-Future - object which represents some action that will be completed 
-"in future" and stores state, result/error of this action in itself and 
-some instructions what need to do after this action.
 
-`_asyncio_future_blocking` - field used for a dual purpose:
+   
 
+
+
+
+<a id="future__init__"><h4>\_\_init\_\_</h4></a>
+
+
+<a id="future__init__"><h4>\_\_init\_\_</h4></a>
+<a id="future__init__"><h4>\_\_init\_\_</h4></a>
+<a id="future__init__"><h4>\_\_init\_\_</h4></a>
 <a id="future__init__"><h4>\_\_init\_\_</h4></a>
 
 <a id="future__await__"><h4>\_\_await\_\_</h4></a>

@@ -244,8 +244,8 @@ class Future:
         """Add a callback to be run when the future becomes done.
 
         The callback is called with a single argument - the future object. If
-        the future is already done when this is called, the callback is
-        scheduled with call_soon.
+        the future is already done when this is called, the callback will be
+        wrapped to Handle and scheduled with call_soon to the FIFO queue.
         """
         if self._state != _PENDING:
             self._loop.call_soon(fn, self, context=context)

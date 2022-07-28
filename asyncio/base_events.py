@@ -388,8 +388,12 @@ class BaseEventLoop(events.AbstractEventLoop):
 
     def __init__(self):
         self._timer_cancelled_count = 0
+        # a flag defined a state of loop
         self._closed = False
+        # a flag used in run_forever, which help to stop producing
+        # a new tasks/futures
         self._stopping = False
+        # a queue for futures/tasks that can be called by the Handle._run
         self._ready = collections.deque()
         self._scheduled = []
         self._default_executor = None
@@ -630,8 +634,11 @@ class BaseEventLoop(events.AbstractEventLoop):
         """
         self._check_closed()
         self._check_running()
-
+        # check the future object is compatible with Future/Task
+        # gets a `_asyncio_future_blocking` field if not there - False
+        # otherwise check that is not None and return True
         new_task = not futures.isfuture(future)
+        #
         future = tasks.ensure_future(future, loop=self)
         if new_task:
             # An exception is raised if the future didn't complete, so there

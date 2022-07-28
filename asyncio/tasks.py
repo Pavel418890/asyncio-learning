@@ -1,3 +1,22 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 """Support for tasks, coroutines and the scheduler."""
 
 __all__ = (
@@ -279,7 +298,8 @@ class Task(futures._PyFuture):  # Inherit Python Task implementation
                 # don't have `__iter__` and `__next__` methods.
 
                 # if call send None to primed coroutine then state switch to
-                # `suspended` mode or StopIteration raised if coroutine is done
+                # `suspended` mode and Future object or None will be yielded
+                # or StopIteration raised if coroutine is done
                 result = coro.send(None)
             else:
                 result = coro.throw(exc)
@@ -680,7 +700,9 @@ def _ensure_future(coro_or_future, *, loop=None):
         * no -  raise ValueError
     2. If `coro_or_futute` is coroutine:
         *  if loop not provided - get the running loop
-        * create Task
+        * create Task,which already wrapped in Handle class and scheduled
+        # to the loop and run soon as possible by the _run method in Handle
+    3.
     """
     if futures.isfuture(coro_or_future):
         if loop is not None and loop is not futures._get_loop(coro_or_future):
