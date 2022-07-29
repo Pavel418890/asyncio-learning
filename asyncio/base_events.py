@@ -1719,7 +1719,7 @@ class BaseEventLoop(events.AbstractEventLoop):
                             f'got {handler!r}')
         self._exception_handler = handler
 
-    def default_exception_handler(self, context):
+    def  default_exception_handler(self, context):
         """Default exception handler.
 
         This is called when an exception occurs and no exception

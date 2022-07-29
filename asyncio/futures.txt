@@ -70,7 +70,7 @@ set_result | set_exception | cancel
 Change the Future's state from PENDING to either _FINISHED or _CANCELLED
 will be via those 3 method:
 
-1. `set_result` would be called with one argument representing the result of
+1. `set_result` would be called with single argument representing the result of
 Future process and stored in _result attribute, in case if future's state
 wasn't transferred from _PENDING state before.In this scenario InvalidStateError
 will be raised. This argument will be received through the StopIteration
@@ -80,4 +80,27 @@ to the loop's FIFO queue.
 Note: The result argument can be received directly in different methods
 where Future used as control unit of work.
 
-2.
+2. `set_exception` have the same semantics as `set_result` except the result
+of Future process stored in _exception attribute and some extra checking of
+received argument will be. First of all it check that received argument is an
+instantiated Exception. In case if is not, the default instantiation happen.
+Instantiated exception cannot be a StopIteration type, because
+StopIteration uses both this methods to change state of running coroutine
+and can't be raised outside of loop control.
+The another difference is an activation of __log_traceback class attribute(set it
+to True). In case if this Future would be GCed the special message that
+exception was never retrieved will be sent to the stderr.
+
+3. `cancel` Before it change the Future's state
+__log_traceback will be set to False, because there is no need to log a warning
+message about exception was never retrieved if exception was set before cancel
+called. After that check that state wasn't changed before,
+otherwise the state will be transferred to _CANCELLED, store optional msg
+argument in _cancelled_message if it's was received, schedule the
+"waiting callbacks" to the FIFO queue. The _cancelled_message can be retrieved
+via exception() method in later call or it will be raised as CancelledError
+through result().
+
+--------------------------------------------------------------------------------
+result | exception
+--------------------------------------------------------------------------------
